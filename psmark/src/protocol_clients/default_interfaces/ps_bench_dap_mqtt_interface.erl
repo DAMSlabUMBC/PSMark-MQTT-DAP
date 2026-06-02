@@ -217,7 +217,7 @@ ensure_mp_registered(ClientPid, ClientIdBin, Topic, PurposeBin, Regs) ->
                 {<<"DAP-MP">>, MpValue},
                 {<<"DAP-Allow">>, <<"1">>}
             ]},
-            emqtt:publish(ClientPid, <<"$DAP/purpose_management">>, RegProperties, <<>>, [{qos, 0}]),
+            emqtt:publish(ClientPid, <<"$MP_REG">>, RegProperties, <<>>, [{qos, 0}]),
             Regs#{Topic => true}
     end.
 
