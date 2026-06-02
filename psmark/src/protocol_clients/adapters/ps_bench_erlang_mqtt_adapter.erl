@@ -79,7 +79,7 @@ handle_call(subscribe, _From, State = #{server_reference := ServerReference, tid
     {reply, ok, State};
 
 handle_call({publish, Topic, Seq, Data, PubOpts}, _From, State = #{server_reference := ServerReference}) ->
-    {ok, Result} = gen_server:call(ServerReference, {publish, #{}, Topic, Data, PubOpts}),
+    {ok, Result} = gen_server:call(ServerReference, {publish, #{}, Topic, Seq, Data, PubOpts}),
     case Result of 
         published ->
             ps_bench_store:record_publish(ServerReference, Topic, Seq);
@@ -218,7 +218,7 @@ start_publication_loop(DeviceType, ServerReference) ->
 
 publication_loop(ServerReference, Topic, QoS, PayloadSizeMean, PayloadSizeVariance) ->
     {Seq, Payload} = ps_bench_utils:generate_mqtt_payload_data(PayloadSizeMean, PayloadSizeVariance, Topic),
-    {ok, Result} = gen_server:call(ServerReference, {publish, #{}, Topic, Payload, [{qos, QoS}]}),
+    {ok, Result} = gen_server:call(ServerReference, {publish, #{}, Topic, Seq, Payload, [{qos, QoS}]}),
     case Result of 
         published ->
             ps_bench_store:record_publish(ServerReference, Topic, Seq);

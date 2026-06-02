@@ -44,7 +44,7 @@ handle_call({subscribe, _Properties, _Topics}, _From, State = #{connected := Con
     % Do nothing if not connected
     {reply, ok, State};
 
-handle_call({publish, Properties, Topic, Payload, PubOpts},
+handle_call({publish, Properties, Topic, _Seq, Payload, PubOpts},
             _From,
             State = #{client_pid := ClientPid, connected := Connected})
   when is_binary(Topic), is_binary(Payload) ->

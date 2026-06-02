@@ -1,0 +1,73 @@
+[
+    {name, dap_4n},
+    {nodes,
+    [
+        {runner_qa,
+        [
+            {devices,
+            [
+                {machine_temperature_sensor, 1},
+                {machine_speed_sensor, 1},
+                {machine_energy_consumption, 1},
+                {production_quality_sensor, 1},
+                {vibration_sensor, 1},
+                {robot_farmap, 1},
+                {robot_nearmap, 1},
+                {robot_imu, 1},
+                {robot_lidar, 1},
+                {robot_odometry, 1}
+            ]}
+        ]},
+
+        {runner_maintenance,
+        [
+            {devices,
+            [
+                {machine_temperature_sensor, 1},
+                {machine_speed_sensor, 1},
+                {machine_energy_consumption, 1},
+                {production_quality_sensor, 1},
+                {vibration_sensor, 1},
+                {robot_farmap, 1},
+                {robot_nearmap, 1},
+                {robot_imu, 1},
+                {robot_lidar, 1},
+                {robot_odometry, 1}
+            ]}
+        ]},
+
+        {runner_regulatory,
+        [
+            {devices,
+            [
+                {machine_temperature_sensor, 1},
+                {machine_speed_sensor, 1},
+                {machine_energy_consumption, 1},
+                {production_quality_sensor, 1},
+                {vibration_sensor, 1},
+                {robot_farmap, 1},
+                {robot_nearmap, 1},
+                {robot_imu, 1},
+                {robot_lidar, 1},
+                {robot_odometry, 1}
+            ]}
+        ]},
+
+        {runner_ops_finance,
+        [
+            {devices,
+            [
+                {machine_temperature_sensor, 1},
+                {machine_speed_sensor, 1},
+                {machine_energy_consumption, 1},
+                {production_quality_sensor, 1},
+                {vibration_sensor, 1},
+                {robot_farmap, 1},
+                {robot_nearmap, 1},
+                {robot_imu, 1},
+                {robot_lidar, 1},
+                {robot_odometry, 1}
+            ]}
+        ]}
+    ]}
+].

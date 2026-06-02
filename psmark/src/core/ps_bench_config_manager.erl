@@ -12,7 +12,7 @@
     fetch_device_reconnect_info/1]).
 
 % MQTT exports
--export([fetch_mqtt_client_module/0, fetch_mqtt_broker_information/0, fetch_mqtt_default_qos/0, fetch_mqtt_qos_for_device/1]).
+-export([fetch_mqtt_client_module/0, fetch_mqtt_broker_information/0, fetch_mqtt_default_qos/0, fetch_mqtt_qos_for_device/1, fetch_mqtt_device_purposes/0]).
 
 % DDS exports
 -export([fetch_dds_nif_information/0, fetch_dds_domain_id/0, fetch_dds_config_file_path/0, fetch_dds_qos_profile/0]).
@@ -317,7 +317,7 @@ process_mqtt_config(ProtocolProps, ProtocolVersion, ScenarioName) ->
     % Validate needed keys are here
     PropListKeys = proplists:get_keys(ProtocolProps),
     NonReqKeys = PropListKeys -- ?MQTT_REQ_KEY_LIST,
-    ExtraKeys = NonReqKeys -- [?MQTT_CLIENT_INTERFACE_MODULE_PROP, ?MQTT_QOS_PROP],
+    ExtraKeys = NonReqKeys -- [?MQTT_CLIENT_INTERFACE_MODULE_PROP, ?MQTT_QOS_PROP, ?MQTT_DEVICE_PURPOSES_PROP],
     MissingKeys = ?MQTT_REQ_KEY_LIST -- PropListKeys,
 
     % Having extra keys is just a warning, disregard return of the case
@@ -438,6 +438,12 @@ fetch_mqtt_qos_for_device(DeviceType) ->
     {ok, QoSList} = fetch_protocol_property(?MQTT_QOS_PROP),
     Value = proplists:get_value(DeviceType, QoSList, DefaultQoS),
     {ok, Value}.
+
+fetch_mqtt_device_purposes() ->
+    case fetch_protocol_property(?MQTT_DEVICE_PURPOSES_PROP, []) of
+        {ok, Value} -> {ok, Value};
+        _ -> {ok, []}
+    end.
 
 fetch_dds_nif_information() ->
     {ok, NifModule} = fetch_protocol_property(?DDS_NIF_MODULE_PROP, ?DDS_DEFAULT_NIF_MODULE),

@@ -1,0 +1,13 @@
+[
+    {name, dap_smoke},
+    {nodes,
+    [
+        {runner1,
+        [
+            {devices,
+            [
+                {machine_energy_consumption, 1}
+            ]}
+        ]}
+    ]}
+].
