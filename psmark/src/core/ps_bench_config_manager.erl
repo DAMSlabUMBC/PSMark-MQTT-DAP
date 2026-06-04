@@ -12,7 +12,7 @@
     fetch_device_reconnect_info/1]).
 
 % MQTT exports
--export([fetch_mqtt_client_module/0, fetch_mqtt_broker_information/0, fetch_mqtt_default_qos/0, fetch_mqtt_qos_for_device/1, fetch_mqtt_device_purposes/0]).
+-export([fetch_mqtt_client_module/0, fetch_mqtt_broker_information/0, fetch_mqtt_default_qos/0, fetch_mqtt_qos_for_device/1, fetch_mqtt_device_purposes/0, fetch_mqtt_purpose_variant_count/0, fetch_mqtt_purpose_fanout_model/0]).
 
 % DDS exports
 -export([fetch_dds_nif_information/0, fetch_dds_domain_id/0, fetch_dds_config_file_path/0, fetch_dds_qos_profile/0]).
@@ -443,6 +443,26 @@ fetch_mqtt_device_purposes() ->
     case fetch_protocol_property(?MQTT_DEVICE_PURPOSES_PROP, []) of
         {ok, Value} -> {ok, Value};
         _ -> {ok, []}
+    end.
+
+%% Number of topic-encoded purpose variants each device publishes per logical
+%% message (topic-based amplification). Default 1 = no amplification, so all
+%% other scenarios/schemes are unaffected.
+fetch_mqtt_purpose_variant_count() ->
+    case fetch_protocol_property(?MQTT_PURPOSE_VARIANT_COUNT_PROP, 1) of
+        {ok, N} when is_integer(N), N >= 1 -> {ok, N};
+        _ -> {ok, 1}
+    end.
+
+%% Topic-based amplification fan-out model for the N purpose variants:
+%%   linear   -> one publish per variant         (N wire messages)
+%%   powerset -> one publish per non-empty subset (2^N - 1 wire messages,
+%%               matching the paper's Observation 1)
+%% Default linear so all other scenarios/schemes are unaffected.
+fetch_mqtt_purpose_fanout_model() ->
+    case fetch_protocol_property(?MQTT_PURPOSE_FANOUT_MODEL_PROP, linear) of
+        {ok, M} when M =:= linear; M =:= powerset -> {ok, M};
+        _ -> {ok, linear}
     end.
 
 fetch_dds_nif_information() ->

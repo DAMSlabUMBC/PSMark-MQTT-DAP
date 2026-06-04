@@ -22,7 +22,9 @@ start_link(ScenarioName, ClientName0, OwnerPid) ->
 init({ScenarioName, RegName, OwnerPid}) ->
     ClientIdBin = ps_bench_utils:convert_to_binary(RegName),
     {ok, PurposeMap} = ps_bench_config_manager:fetch_mqtt_device_purposes(),
-    {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, purpose_map => PurposeMap}}.
+    {ok, VariantCount} = ps_bench_config_manager:fetch_mqtt_purpose_variant_count(),
+    {ok, FanoutModel} = ps_bench_config_manager:fetch_mqtt_purpose_fanout_model(),
+    {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, purpose_map => PurposeMap, variant_count => VariantCount, fanout_model => FanoutModel}}.
 
 handle_call(connect, _From, State = #{first_start := FirstStart}) ->
     do_connect(FirstStart, State);
@@ -42,16 +44,44 @@ handle_call({subscribe, _Properties, _Topics}, _From, State = #{connected := Con
 
 handle_call({publish, Properties, Topic, _Seq, Payload, PubOpts},
             _From,
-            State = #{client_pid := ClientPid, connected := Connected, purpose_map := PurposeMap})
+            State = #{client_pid := ClientPid, connected := Connected, purpose_map := PurposeMap, variant_count := VariantCount, fanout_model := FanoutModel})
   when is_binary(Topic), is_binary(Payload) ->
     case Connected of
         true ->
             PurposeBin = purpose_for_topic(Topic, PurposeMap),
-            EncodedTopic = <<Topic/binary, "/[", PurposeBin/binary, "]">>,
-            %% Prepend system time time so payload matches decode_seq_header/1
+            %% Prepend system time so payload matches decode_seq_header/1
             TimeNs = erlang:system_time(nanosecond),
             Payload1 = <<TimeNs:64/unsigned, Payload/binary>>,
-            emqtt:publish(ClientPid, EncodedTopic, Properties, Payload1, PubOpts),
+            %% Topic-based purpose amplification: publish the same logical message
+            %% under several purpose-topic labels. The N variants of this device's
+            %% base purpose are [P], [P_2], ..., [P_N]. The fan-out model decides
+            %% which labels go on the wire:
+            %%   linear   -> one per variant            (N labels)
+            %%   powerset -> one per non-empty subset    (2^N - 1 labels, joined by
+            %%               '.', matching the paper's Observation 1)
+            %% NB: the join separator must be a legal MQTT publish-topic char -
+            %% NOT '+'/'#' (wildcards, rejected by the broker), '/' (level sep), or
+            %% '_' (variant sep). '.' is safe.
+            %% Subscribers use a qos_N/# wildcard, so the broker delivers every
+            %% label -> that many wire copies per logical publish. VariantCount
+            %% defaults to 1 and FanoutModel to linear, so other scenarios are
+            %% unaffected.
+            N = max(1, VariantCount),
+            Variants = [ variant_label(I, PurposeBin) || I <- lists:seq(1, N) ],
+            Labels =
+                case FanoutModel of
+                    powerset ->
+                        [ join_binaries(subset_members(Mask, Variants), <<".">>)
+                          || Mask <- lists:seq(1, (1 bsl N) - 1) ];
+                    _ ->
+                        Variants
+                end,
+            lists:foreach(
+              fun(Label) ->
+                  EncodedTopic = <<Topic/binary, "/[", Label/binary, "]">>,
+                  emqtt:publish(ClientPid, EncodedTopic, Properties, Payload1, PubOpts)
+              end,
+              Labels),
             {reply, {ok, published}, State};
         false ->
             %% Not connected; swallow to keep orchestration alive
@@ -195,3 +225,19 @@ purpose_for_topic(Topic, PurposeMap) ->
         _ ->
             <<"p1">>
     end.
+
+%% The I-th variant label of a base purpose: variant 1 is the base purpose
+%% itself; variant I>1 is "<base>_<I>".
+variant_label(1, PurposeBin) -> PurposeBin;
+variant_label(I, PurposeBin) -> <<PurposeBin/binary, "_", (integer_to_binary(I))/binary>>.
+
+%% The members of Variants selected by the bits set in Mask, kept in variant
+%% order so each subset maps to one canonical (ordered) label.
+subset_members(Mask, Variants) ->
+    [ V || {I, V} <- lists:zip(lists:seq(0, length(Variants) - 1), Variants),
+           (Mask bsr I) band 1 =:= 1 ].
+
+%% Join binaries with Sep between them (no leading/trailing separator).
+join_binaries([], _Sep) -> <<>>;
+join_binaries([H | T], Sep) ->
+    lists:foldl(fun(B, Acc) -> <<Acc/binary, Sep/binary, B/binary>> end, H, T).

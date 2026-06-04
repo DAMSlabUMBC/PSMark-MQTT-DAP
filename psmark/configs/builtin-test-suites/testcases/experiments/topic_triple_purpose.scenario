@@ -13,6 +13,8 @@
         {client_interface_module, ps_bench_topic_encoded_mqtt_interface},
         {broker, "127.0.0.1"},
         {port, 1884},
+        {purpose_variant_count, 3},
+        {purpose_fanout_model, powerset},
         {qos,
         [
             {default_qos, 0}
