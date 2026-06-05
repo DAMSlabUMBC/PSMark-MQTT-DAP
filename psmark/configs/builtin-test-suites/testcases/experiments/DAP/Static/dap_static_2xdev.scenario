@@ -23,7 +23,7 @@
             {machine_speed_sensor,       ["maintenance/{predictive,routine}"]},
             {machine_energy_consumption, ["operations/forecast","regulatory/reporting"]},
             {production_quality_sensor,  ["quality/assurance","operations/forecast","regulatory/reporting"]},
-            {vibration_sensor,           ["quality/assurance","maintenance/{predictive,routine}]"},
+            {vibration_sensor,           ["quality/assurance","maintenance/{predictive,routine}"]},
             {robot_farmap,               ["vendor/maintenance"]},
             {robot_nearmap,              ["vendor/maintenance"]},
             {robot_imu,                  ["vendor/maintenance"]},
