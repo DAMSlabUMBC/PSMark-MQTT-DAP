@@ -1,0 +1,46 @@
+[
+    {name, dap_triple_purpose},
+    {duration, {3, minutes}},
+    {protocol, mqttv5},
+    {deployment_name, smart_factory_1_node},
+    {hosts,
+    [
+        {runner1, [{hostname, "127.0.0.1"}]}
+    ]},
+
+    {protocol_config,
+    [
+        {client_interface_module, ps_bench_dap_mqtt_interface},
+        {broker, "127.0.0.1"},
+        {port, 1883},
+        {qos,
+        [
+            {default_qos, 0}
+        ]},
+        {device_purposes,
+        [
+            {machine_temperature_sensor, ["quality/assurance/{1,2,3}"]},
+            {machine_speed_sensor,       ["maintenance/{predictive,routine}/{1,2,3}"]},
+            {machine_energy_consumption, ["operations/forecast/{1,2,3}","regulatory/reporting/{1,2,3}"]},
+            {production_quality_sensor,  ["quality/assurance/{1,2,3}","operations/forecast/{1,2,3}","regulatory/reporting/{1,2,3}"]},
+            {vibration_sensor,           ["quality/assurance/{1,2,3}","maintenance/{predictive,routine}/{1,2,3}"]},
+            {robot_farmap,               ["vendor/maintenance/{1,2,3}"]},
+            {robot_nearmap,              ["vendor/maintenance/{1,2,3}"]},
+            {robot_imu,                  ["vendor/maintenance/{1,2,3}"]},
+            {robot_lidar,                ["vendor/maintenance/{1,2,3}"]},
+            {robot_odometry,             ["vendor/maintenance/{1,2,3}"]}
+        ]}
+    ]},
+
+    {metric_config,
+    [
+        {output_dir, "results"},
+        {hw_stats_poll_period_ms, 1000},
+        {metric_plugins,
+        [
+            {ps_bench_throughput_calc_plugin, erlang},
+            {ps_bench_latency_calc_plugin, erlang},
+            {ps_bench_dropped_message_calc_plugin, erlang}
+        ]}
+    ]}
+].

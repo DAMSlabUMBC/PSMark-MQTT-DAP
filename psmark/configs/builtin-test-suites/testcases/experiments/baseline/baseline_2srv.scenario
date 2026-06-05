@@ -1,5 +1,5 @@
 [
-    {name, baseline_2xdev},
+    {name, baseline_2srv},
     {duration, {3, minutes}},
     {protocol, mqttv5},
     {deployment_name, smart_factory_2_node},

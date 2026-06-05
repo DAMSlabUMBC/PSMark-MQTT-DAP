@@ -19,16 +19,16 @@
         ]},
         {device_purposes,
         [
-            {machine_temperature_sensor, "maintenance.predictive"},
-            {machine_speed_sensor,       "quality.assurance"},
-            {machine_energy_consumption, "finance.reporting"},
-            {production_quality_sensor,  "quality.assurance"},
-            {vibration_sensor,           "maintenance.predictive"},
-            {robot_farmap,               "partner.logistics.routing"},
-            {robot_nearmap,              "partner.logistics.routing"},
-            {robot_imu,                  "maintenance.routine"},
-            {robot_lidar,                "vendor.maintenance"},
-            {robot_odometry,             "supply.forecast"}
+            {machine_temperature_sensor, ["quality/assurance"]},
+            {machine_speed_sensor,       ["maintenance/{predictive,routine}"]},
+            {machine_energy_consumption, ["operations/forecast","regulatory/reporting"]},
+            {production_quality_sensor,  ["quality/assurance","operations/forecast","regulatory/reporting"]},
+            {vibration_sensor,           ["quality/assurance","maintenance/{predictive,routine}]"},
+            {robot_farmap,               ["vendor/maintenance"]},
+            {robot_nearmap,              ["vendor/maintenance"]},
+            {robot_imu,                  ["vendor/maintenance"]},
+            {robot_lidar,                ["vendor/maintenance"]},
+            {robot_odometry,             ["vendor/maintenance"]}
         ]}
     ]},
 

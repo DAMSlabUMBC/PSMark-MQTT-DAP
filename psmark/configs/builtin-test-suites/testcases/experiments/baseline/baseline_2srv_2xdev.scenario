@@ -1,11 +1,12 @@
 [
-    {name, baseline_smoke},
-    {duration, {30, seconds}},
+    {name, baseline_2srv_2xdev},
+    {duration, {3, minutes}},
     {protocol, mqttv5},
-    {deployment_name, smart_factory_1_node},
+    {deployment_name, smart_factory_2x_2_node},
     {hosts,
     [
-        {runner1, [{hostname, "127.0.0.1"}]}
+        {runner1, [{hostname, "127.0.0.1"}]},
+        {runner2, [{hostname, "127.0.0.1"}]}
     ]},
 
     {protocol_config,

@@ -11,6 +11,8 @@
 
 -export([log_message/1, log_message/2, log_state_change/1, log_state_change/2]).
 
+-export([decompose_purpose_filter/1]).
+
 % TODO, Fix RNG seeding
 initialize_rng_seed() ->
     % No seed provided, use the crypto library to generate a 12 digit seed
@@ -179,3 +181,20 @@ log_state_change(Message, Args) ->
     FormattedMessage = io_lib:format(Message, Args),
     {{_,_,_},{Hour,Min,Sec}} = erlang:localtime(),
     io:format("[~p - ~p:~p:~p] === ~s ===~n", [NodeName, Hour, Min, Sec, FormattedMessage]).
+
+decompose_purpose_filter(Filter) ->
+    Levels = string:tokens(Filter,"/"),
+    LevelsNew = lists:map(fun(X) -> string:tokens(string:strip(string:strip(X, both, ${), both, $}),",") end, Levels),
+    [L1 | L2] = LevelsNew,
+    atomize_purpose(L1, L2).
+
+atomize_purpose(CurrList, []) ->
+     CurrList;
+
+atomize_purpose(CurrList, [L1 | NextLevels]) ->
+     S1 = sofs:set(CurrList),
+     S2 = sofs:set(L1),
+     P3 = sofs:product(S1, S2),
+     Extern = sofs:to_external(P3),
+     Result = lists:map(fun(X) -> lists:flatten(lists:join("/", tuple_to_list(X))) end, Extern),
+     atomize_purpose(Result, NextLevels).
