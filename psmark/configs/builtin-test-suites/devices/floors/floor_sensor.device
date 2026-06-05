@@ -1,0 +1,13 @@
+% PLACEHOLDER floor publisher device for the floors x devices topology cells.
+% Christian's test section defines the real device type(s) and parameters; the
+% deployment device COUNT is what these cells scale (40 / 80 per floor).
+[
+    {type, floor_sensor},
+    {publication_frequency_ms, 1000},
+    {payload_bytes_mean, 64.0},
+    {payload_bytes_variance, 0.0},
+    {disconnect_check_period_ms, 0},
+    {disconnect_chance_pct, 0.0},
+    {reconnect_check_period_ms, 0},
+    {reconnect_chance_pct, 0.0}
+].

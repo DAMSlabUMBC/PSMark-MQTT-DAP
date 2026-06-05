@@ -1,0 +1,21 @@
+% Floors x devices topology cell: 40 devices x 1 floor.
+% A floor = an edge server = a node. Each floor node runs the publisher devices;
+% a single subscriber-only node (role subscriber) consumes across floors.
+[
+    {name, floor_40x1},
+    {nodes,
+    [
+        {floor1,
+        [
+            {devices,
+            [
+                {floor_sensor, 40}
+            ]}
+        ]},
+        {aggregator,
+        [
+            {role, subscriber},
+            {devices, []}
+        ]}
+    ]}
+].

@@ -8,8 +8,8 @@
 % Retrieval exports
 -export([fetch_node_name/0, fetch_selected_scenario/0, fetch_scenario_duration/0, fetch_deployment_name/0, fetch_node_name_list/0,
     fetch_host_for_node_name/1, fetch_host_for_node_name/2, fetch_rng_seed_for_node/1, fetch_node_list/0, fetch_protocol_type/0, fetch_devices_for_this_node/0,
-    fetch_role_for_this_node/0, fetch_role_for_node/1,
-    fetch_device_publication_frequency/1, fetch_device_payload_info/1, fetch_device_disconnect_info/1, 
+    fetch_role_for_this_node/0, fetch_role_for_node/1, fetch_devices_for_node/1,
+    fetch_device_publication_frequency/1, fetch_device_payload_info/1, fetch_device_disconnect_info/1,
     fetch_device_reconnect_info/1]).
 
 % MQTT exports
