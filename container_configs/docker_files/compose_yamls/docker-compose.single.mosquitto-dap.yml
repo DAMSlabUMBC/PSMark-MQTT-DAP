@@ -1,0 +1,65 @@
+# Single-broker stack for the paper matrix's DAP cells, modeled on
+# docker-compose.single.mosquitto.yml. The broker image is built from
+# mqtt-dap-mosquitto develop (builds cleanly since 0ba79c81):
+#
+#     docker build -t mqtt-dap-mosquitto:develop <path-to>/mqtt-dap-mosquitto
+#
+# PORTS: the runner reaches the broker INSIDE the compose network (alias
+# mosquitto-dap, container port 1883, matching the scenarios' {port, 1883}).
+# The host-side binding is 18883 - debug/external access only - so the two
+# pre-existing brokers on the host's 1883/1884 stay untouched and running.
+networks:
+  benchnet:
+    driver: bridge
+
+services:
+  mosquitto-dap:
+    image: mqtt-dap-mosquitto:develop
+    container_name: mosquitto-dap
+    hostname: mosquitto-dap
+    domainname: benchnet
+    networks:
+      benchnet:
+        aliases: ["mosquitto-dap", "mqtt", "broker"]
+    ports: ["127.0.0.1:18883:1883"]
+    volumes:
+      - ./mosquitto-dap.conf:/etc/mosquitto/mosquitto.conf:ro
+      - ./out/mosquitto-dap:/mosquitto/log
+    healthcheck:
+      # image is ubuntu-based without netcat; use bash's /dev/tcp
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/1883'"]
+      interval: 15s
+      timeout: 1s
+      retries: 20
+      start_period: 2s
+
+  runnerMQTT1:
+    image: psmark-runner:latest
+    container_name: runnerMQTT1
+    hostname: runnerMQTT1
+    domainname: benchnet
+    networks:
+      benchnet:
+        aliases:
+          - runnerMQTT1.benchnet
+    environment:
+      DIST_MODE: name
+      NODE_BASE: runner1
+      NODE_HOST_OVERRIDE: ${NODE1_HOST_OVERRIDE:-}
+      BROKER_HOST: mosquitto-dap
+      BROKER_PORT: 1883
+      ADD_NODE_TO_SUFFIX: ${ADD_NODE_TO_SUFFIX:-false}
+      RELEASE_COOKIE: ${RELEASE_COOKIE:-psmark_cookie}
+      RUN_TAG: ${RUN_TAG:-mqtt_dap_test}
+      SCEN_DIR: ${SCEN_DIR:-/app/configs/builtin-test-suites/testcases/experiments/DAP/Static}
+      DEVICE_DIR: /app/configs/builtin-test-suites/devices
+      DEPLOY_DIR: /app/configs/builtin-test-suites/deployments
+      SCENARIO: ${SCENARIO:-dap_static_base}
+      BROKER_LOG_DIR: /app/broker_logs
+    volumes:
+      - ./out/runnerMQTT1:/app/out
+      - ./results:/app/results
+      - ./out/mosquitto-dap:/app/broker_logs:ro
+    depends_on:
+      mosquitto-dap:
+        condition: service_healthy

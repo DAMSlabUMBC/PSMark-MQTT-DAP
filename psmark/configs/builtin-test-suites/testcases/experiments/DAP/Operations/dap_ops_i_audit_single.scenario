@@ -4,7 +4,7 @@
 % operations must come from the same client that published the data.
 [
     {name, dap_ops_i_audit_single},
-    {duration, {3, minutes}},
+    {duration, {60, seconds}},
     {protocol, mqttv5},
     {deployment_name, floor_40x1},
     {hosts,
@@ -22,7 +22,7 @@
     [
         {client_interface_module, ps_bench_dap_mqtt_interface},
         {broker, "127.0.0.1"},
-        {port, 1883},
+        {port, 18883},
         {qos,
         [
             {default_qos, 0}

@@ -19,6 +19,9 @@
          handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
+%% exported for timer:apply_interval (MFA form requires exported functions)
+-export([disconnect_loop/2, reconnect_loop/2]).
+
 start_link(TestName, NifName, FullNifPath, DomainId, ClientName, DeviceType) ->
     ClientNameAtom = ps_bench_utils:convert_to_atom(ClientName),
     gen_server:start_link({local, ClientNameAtom}, ?MODULE, [TestName, NifName, FullNifPath, ClientNameAtom, DeviceType, DomainId], []).
@@ -181,8 +184,8 @@ start_disconnection_loop(DeviceType, ClientName) ->
     % Make sure we have a non-zero period
     case DisconPeriodMs of 
         Period when Period > 0 ->
-            % apply_repeatedly doesn't run a new instance until the previous finished
-            timer:apply_repeatedly(Period, fun disconnect_loop/2, [ClientName, DisconChance]);
+            % apply_interval is used instead of apply_repeatedly for OTP 24 compatibility
+            timer:apply_interval(Period, ?MODULE, disconnect_loop, [ClientName, DisconChance]);
         _ ->
             {ok, 0}
     end.
@@ -203,8 +206,8 @@ start_reconnection_loop(DeviceType, ClientName) ->
     % Make sure we have a non-zero period
     case ReconPeriodMs of 
         Period when Period > 0 ->
-            % apply_repeatedly doesn't run a new instance until the previous finished
-            timer:apply_repeatedly(Period, fun reconnect_loop/2, [ClientName, ReconChance]);
+            % apply_interval is used instead of apply_repeatedly for OTP 24 compatibility
+            timer:apply_interval(Period, ?MODULE, reconnect_loop, [ClientName, ReconChance]);
         _ ->
             {ok, 0}
     end.

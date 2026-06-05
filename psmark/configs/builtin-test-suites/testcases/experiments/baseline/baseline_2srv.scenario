@@ -1,6 +1,6 @@
 [
     {name, baseline_2srv},
-    {duration, {3, minutes}},
+    {duration, {60, seconds}},
     {protocol, mqttv5},
     {deployment_name, smart_factory_2_node},
     {hosts,
@@ -12,7 +12,7 @@
     {protocol_config,
     [
         {broker, "127.0.0.1"},
-        {port, 1884},
+        {port, 18884},
         {qos,
         [
             {default_qos, 0}

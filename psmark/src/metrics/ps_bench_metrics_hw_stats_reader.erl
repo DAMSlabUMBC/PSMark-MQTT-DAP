@@ -22,7 +22,7 @@ init([]) ->
 handle_call(start_polling, _From, State) -> 
       {ok, PollFrequencyMs} = ps_bench_config_manager:fetch_metric_hw_poll_period(),
       {ok, TRef} =
-                timer:apply_repeatedly(
+                timer:apply_interval(
                     PollFrequencyMs,
                     ?MODULE, poll_hw_stats,
                     []),

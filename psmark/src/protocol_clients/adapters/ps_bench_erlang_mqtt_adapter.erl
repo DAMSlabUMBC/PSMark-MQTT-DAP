@@ -267,9 +267,9 @@ start_disconnection_loop(DeviceType, ServerReference) ->
     % Make sure we have a non-zero period
     case DisconPeriodMs of 
         Period when Period > 0 ->
-            % apply_repeatedly doesn't run a new instance until the previous finished
+            % apply_interval is used instead of apply_repeatedly for OTP 24 compatibility
             {ok, TRef} =
-                timer:apply_repeatedly(
+                timer:apply_interval(
                     Period,
                     ?MODULE, disconnect_loop,
                     [ServerReference, DisconChance]),
@@ -295,7 +295,7 @@ start_reconnection_loop(DeviceType, ServerReference) ->
     case ReconPeriodMs of 
         Period when Period > 0 ->
             {ok, TRef} =
-                timer:apply_repeatedly(
+                timer:apply_interval(
                     Period,
                     ?MODULE, reconnect_loop,
                     [ServerReference, ReconChance]),

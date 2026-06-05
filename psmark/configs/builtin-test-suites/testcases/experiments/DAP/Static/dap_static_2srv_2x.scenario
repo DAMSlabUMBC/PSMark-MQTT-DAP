@@ -1,6 +1,6 @@
 [
     {name, dap_static_2srv_2x},
-    {duration, {3, minutes}},
+    {duration, {60, seconds}},
     {protocol, mqttv5},
     {deployment_name, floor_80x2},
     {hosts,
@@ -19,7 +19,7 @@
     [
         {client_interface_module, ps_bench_dap_mqtt_interface},
         {broker, "127.0.0.1"},
-        {port, 1883},
+        {port, 18883},
         {qos,
         [
             {default_qos, 0}
