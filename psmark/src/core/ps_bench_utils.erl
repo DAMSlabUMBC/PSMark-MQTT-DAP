@@ -182,11 +182,32 @@ log_state_change(Message, Args) ->
     {{_,_,_},{Hour,Min,Sec}} = erlang:localtime(),
     io:format("[~p - ~p:~p:~p] === ~s ===~n", [NodeName, Hour, Min, Sec, FormattedMessage]).
 
+%% A purpose filter may contain several independent filters separated by '|'.
+%% Each piece is decomposed on its own (the set-notation Cartesian product
+%% below) and the results are unioned, so "a/b|c/d" yields [a/b, c/d] - never
+%% the cross product (a/d, c/b) across the '|' boundary.
 decompose_purpose_filter(Filter) ->
+    Filters = string:tokens(Filter, "|"),
+    Decomposed = lists:flatmap(fun decompose_single_filter/1, Filters),
+    union_preserve_order(Decomposed).
+
+decompose_single_filter(Filter) ->
     Levels = string:tokens(Filter,"/"),
     LevelsNew = lists:map(fun(X) -> string:tokens(string:strip(string:strip(X, both, ${), both, $}),",") end, Levels),
     [L1 | L2] = LevelsNew,
     atomize_purpose(L1, L2).
+
+%% Union: drop later duplicates while keeping first-seen order.
+union_preserve_order(List) ->
+    union_preserve_order(List, [], []).
+
+union_preserve_order([], _Seen, Acc) ->
+    lists:reverse(Acc);
+union_preserve_order([H | T], Seen, Acc) ->
+    case lists:member(H, Seen) of
+        true  -> union_preserve_order(T, Seen, Acc);
+        false -> union_preserve_order(T, [H | Seen], [H | Acc])
+    end.
 
 atomize_purpose(CurrList, []) ->
      CurrList;
