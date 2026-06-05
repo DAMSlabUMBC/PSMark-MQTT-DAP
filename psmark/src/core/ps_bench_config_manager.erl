@@ -8,6 +8,7 @@
 % Retrieval exports
 -export([fetch_node_name/0, fetch_selected_scenario/0, fetch_scenario_duration/0, fetch_deployment_name/0, fetch_node_name_list/0,
     fetch_host_for_node_name/1, fetch_host_for_node_name/2, fetch_rng_seed_for_node/1, fetch_node_list/0, fetch_protocol_type/0, fetch_devices_for_this_node/0,
+    fetch_role_for_this_node/0, fetch_role_for_node/1,
     fetch_device_publication_frequency/1, fetch_device_payload_info/1, fetch_device_disconnect_info/1, 
     fetch_device_reconnect_info/1]).
 
@@ -220,9 +221,9 @@ process_deployment_node(Def, NodeName, DeploymentName) ->
 
     % Validate needed keys are here
     PropListKeys = proplists:get_keys(Def),
-    ExtraKeys = PropListKeys -- ?DEPLOYMENT_REQ_NODE_KEYS,
+    ExtraKeys = PropListKeys -- (?DEPLOYMENT_REQ_NODE_KEYS ++ ?DEPLOYMENT_OPT_NODE_KEYS),
     MissingKeys = ?DEPLOYMENT_REQ_NODE_KEYS -- PropListKeys,
-    
+
     % Having extra keys is just a warning, disregard return of the case
     case ExtraKeys of
         [] -> ok;
@@ -234,7 +235,11 @@ process_deployment_node(Def, NodeName, DeploymentName) ->
         [] ->
             % Now process the node section
             DevicesInDeployment = proplists:get_value(?DEPLOYMENT_DEVICES_PROP, Def),
-            persistent_term:put({?MODULE, DeploymentName, NodeName}, DevicesInDeployment);
+            persistent_term:put({?MODULE, DeploymentName, NodeName}, DevicesInDeployment),
+
+            % Persist the node role (defaults to publisher = legacy behavior)
+            Role = proplists:get_value(?DEPLOYMENT_ROLE_PROP, Def, ?DEPLOYMENT_ROLE_PUBLISHER),
+            persistent_term:put({?MODULE, DeploymentName, NodeName, role}, Role);
         _ ->
             Reason = io_lib:format("Missings key(s) ~p in node ~p definition.~n", [MissingKeys, NodeName]),
             {error, Reason}
@@ -615,6 +620,15 @@ fetch_erlang_metric_plugins() ->
     {ok, AllPlugins} = fetch_metric_property(?METRIC_PLUGINS_PROP),
     ErlangPlugins = lists:filtermap(fun({Name, Interface}) -> case Interface of ?ERLANG_INTERFACE -> {true, Name}; _ -> false end end, AllPlugins),
     {ok, ErlangPlugins}.
+
+fetch_role_for_this_node() ->
+    {ok, NodeName} = fetch_node_name(),
+    fetch_role_for_node(NodeName).
+
+fetch_role_for_node(NodeName) ->
+    {ok, DeploymentName} = fetch_deployment_name(),
+    Role = persistent_term:get({?MODULE, DeploymentName, NodeName, role}, ?DEPLOYMENT_ROLE_PUBLISHER),
+    {ok, Role}.
 
 fetch_devices_for_this_node() ->
     {ok, NodeName} = fetch_node_name(),

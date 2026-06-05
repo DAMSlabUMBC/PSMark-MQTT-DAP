@@ -32,6 +32,13 @@
 -define(DEPLOYMENT_DEVICES_PROP, devices).
 -define(DEPLOYMENT_REQ_KEYS, [?DEPLOYMENT_NAME_PROP, ?DEPLOYMENT_NODES_PROP]).
 -define(DEPLOYMENT_REQ_NODE_KEYS, [?DEPLOYMENT_DEVICES_PROP]).
+% Optional per-node deployment keys (recognized, not required, no warning)
+-define(DEPLOYMENT_ROLE_PROP, role).
+-define(DEPLOYMENT_OPT_NODE_KEYS, [?DEPLOYMENT_ROLE_PROP]).
+% Node roles: publisher (default) runs device publishers AND a subscription client
+% (unchanged legacy behavior); subscriber runs ONLY a subscription client.
+-define(DEPLOYMENT_ROLE_PUBLISHER, publisher).
+-define(DEPLOYMENT_ROLE_SUBSCRIBER, subscriber).
 
 % Scenario file fields
 -define(SCENARIO_NAME_PROP, name).

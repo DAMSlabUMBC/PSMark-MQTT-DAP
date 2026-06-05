@@ -53,19 +53,45 @@ clean_up_scenario() ->
 
 initialize_clients() ->
 
-    % Fetch devices for this node
-    {ok, NodeDevices} = ps_bench_config_manager:fetch_devices_for_this_node(),
     {ok, NodeName} = ps_bench_config_manager:fetch_node_name(),
 
-    % Initialize each publication client for each device
-    ClientList = initialize_clients_for_devices(NodeName, NodeDevices, []),
+    % Resolve and cache this node's role for the rest of the run. The role guards
+    % every persistent_term client-class access below so that a subscriber-only
+    % node (no device_clients) never crashes with a badkey, and a publisher node
+    % keeps the legacy publisher+subscriber behavior unchanged.
+    {ok, Role} = ps_bench_config_manager:fetch_role_for_this_node(),
+    persistent_term:put({?MODULE, node_role}, Role),
 
-    % Store the list of client PIDs using the persistent_term module which has constant speed lookup
-    persistent_term:put({?MODULE, device_clients}, ClientList),
+    % Publisher nodes create one publication client per device
+    case has_publishers() of
+        true ->
+            {ok, NodeDevices} = ps_bench_config_manager:fetch_devices_for_this_node(),
+            ClientList = initialize_clients_for_devices(NodeName, NodeDevices, []),
+            persistent_term:put({?MODULE, device_clients}, ClientList);
+        false ->
+            ok
+    end,
 
-    % We need one subscription client which represents all subscriptions for this node
-    SubscriptionClient = initialize_subscription_client(NodeName),
-    persistent_term:put({?MODULE, subscription_client}, SubscriptionClient).
+    % Every role uses one subscription client which represents all subscriptions for this node
+    case has_subscriber() of
+        true ->
+            SubscriptionClient = initialize_subscription_client(NodeName),
+            persistent_term:put({?MODULE, subscription_client}, SubscriptionClient);
+        false ->
+            ok
+    end.
+
+%% Role helpers. node_role/0 is set once in initialize_clients/0.
+node_role() ->
+    persistent_term:get({?MODULE, node_role}, ?DEPLOYMENT_ROLE_PUBLISHER).
+
+has_publishers() ->
+    node_role() =:= ?DEPLOYMENT_ROLE_PUBLISHER.
+
+has_subscriber() ->
+    %% Both publisher and subscriber roles run a subscription client today.
+    %% Threaded as a guard so a future publisher-only role drops in cleanly.
+    node_role() =:= ?DEPLOYMENT_ROLE_PUBLISHER orelse node_role() =:= ?DEPLOYMENT_ROLE_SUBSCRIBER.
 
 initialize_clients_for_devices(_NodeName, [], ClientList) ->
     ClientList;
@@ -102,53 +128,103 @@ initialize_subscription_client(NodeName) ->
 
 connect_clients() ->
     % Connect subscriber first
-    {_SubscriberName, SubscriberClient} = persistent_term:get({?MODULE, subscription_client}),
-    gen_server:call(SubscriberClient, connect),
+    case has_subscriber() of
+        true ->
+            {_SubscriberName, SubscriberClient} = persistent_term:get({?MODULE, subscription_client}),
+            gen_server:call(SubscriberClient, connect);
+        false ->
+            ok
+    end,
 
-    % Start client publication loops
-    ClientList = persistent_term:get({?MODULE, device_clients}),
-    ConnectFunction = fun({_ClientName, ClientPid}) -> gen_server:call(ClientPid, connect) end,
-    lists:foreach(ConnectFunction, ClientList).
+    % Then connect each publication client
+    case has_publishers() of
+        true ->
+            ClientList = persistent_term:get({?MODULE, device_clients}),
+            ConnectFunction = fun({_ClientName, ClientPid}) -> gen_server:call(ClientPid, connect) end,
+            lists:foreach(ConnectFunction, ClientList);
+        false ->
+            ok
+    end.
 
 subscribe_clients() ->
     %  Only subscriber client calls this
-    {_SubscriberName, SubscriberClient} = persistent_term:get({?MODULE, subscription_client}),
-    gen_server:call(SubscriberClient, subscribe).
+    case has_subscriber() of
+        true ->
+            {_SubscriberName, SubscriberClient} = persistent_term:get({?MODULE, subscription_client}),
+            gen_server:call(SubscriberClient, subscribe);
+        false ->
+            ok
+    end.
 
 start_client_loops() ->
     % Only publishing clients start loops here
-    ClientList = persistent_term:get({?MODULE, device_clients}),
-    StartFunction = fun({_ClientName, ClientPid}) -> gen_server:cast(ClientPid, start_client_loops) end,
-    lists:foreach(StartFunction, ClientList).
+    case has_publishers() of
+        true ->
+            ClientList = persistent_term:get({?MODULE, device_clients}),
+            StartFunction = fun({_ClientName, ClientPid}) -> gen_server:cast(ClientPid, start_client_loops) end,
+            lists:foreach(StartFunction, ClientList);
+        false ->
+            ok
+    end.
 
 stop_publishers() ->
     % Stop client publication loops
-    ClientList = persistent_term:get({?MODULE, device_clients}),
-    StopFunction = fun({_ClientName, ClientPid}) -> gen_server:cast(ClientPid, stop) end,
-    lists:foreach(StopFunction, ClientList).
+    case has_publishers() of
+        true ->
+            ClientList = persistent_term:get({?MODULE, device_clients}),
+            StopFunction = fun({_ClientName, ClientPid}) -> gen_server:cast(ClientPid, stop) end,
+            lists:foreach(StopFunction, ClientList);
+        false ->
+            ok
+    end.
 
 stop_subscriber() ->
-    % Stop subscriber first
-    {_SubscriberName, SubscriberClient} = persistent_term:get({?MODULE, subscription_client}),
-    gen_server:cast(SubscriberClient, stop).
+    % Stop subscriber
+    case has_subscriber() of
+        true ->
+            {_SubscriberName, SubscriberClient} = persistent_term:get({?MODULE, subscription_client}),
+            gen_server:cast(SubscriberClient, stop);
+        false ->
+            ok
+    end.
 
 destroy_clients() ->
-    % Stop subscriber first
-    {_SubscriberName, SubscriberClient} = persistent_term:get({?MODULE, subscription_client}),
-    supervisor:terminate_child(?CLIENT_SUPERVISOR, SubscriberClient),
-    persistent_term:erase({?MODULE, subscription_client}),
+    % Tear down the subscription client (if this role has one)
+    case has_subscriber() of
+        true ->
+            {_SubscriberName, SubscriberClient} = persistent_term:get({?MODULE, subscription_client}),
+            supervisor:terminate_child(?CLIENT_SUPERVISOR, SubscriberClient),
+            persistent_term:erase({?MODULE, subscription_client});
+        false ->
+            ok
+    end,
 
-    % Stop client publication loops
-    ClientList = persistent_term:get({?MODULE, device_clients}),
-    DestroyFunction = fun({_ClientName, ClientPid}) -> supervisor:terminate_child(?CLIENT_SUPERVISOR, ClientPid) end,
-    lists:foreach(DestroyFunction, ClientList),
-    persistent_term:erase({?MODULE, device_clients}).
+    % Tear down the publication clients (if this role has them)
+    case has_publishers() of
+        true ->
+            ClientList = persistent_term:get({?MODULE, device_clients}),
+            DestroyFunction = fun({_ClientName, ClientPid}) -> supervisor:terminate_child(?CLIENT_SUPERVISOR, ClientPid) end,
+            lists:foreach(DestroyFunction, ClientList),
+            persistent_term:erase({?MODULE, device_clients});
+        false ->
+            ok
+    end.
 
 print_clients() ->
-    {SubscriberName, SubscriberClient} = persistent_term:get({?MODULE, subscription_client}),
-    ps_bench_utils:log_message("~p - ~p", [SubscriberName, SubscriberClient]),
+    case has_subscriber() of
+        true ->
+            {SubscriberName, SubscriberClient} = persistent_term:get({?MODULE, subscription_client}),
+            ps_bench_utils:log_message("~p - ~p", [SubscriberName, SubscriberClient]);
+        false ->
+            ok
+    end,
 
-    ClientList = persistent_term:get({?MODULE, device_clients}),
-    ps_bench_utils:log_state_change("All Clients"),
-    PrintFunction = fun({ClientName, ClientPid}) -> ps_bench_utils:log_message("~p - ~p", [ClientName, ClientPid]) end,
-    lists:foreach(PrintFunction, ClientList).
+    case has_publishers() of
+        true ->
+            ClientList = persistent_term:get({?MODULE, device_clients}),
+            ps_bench_utils:log_state_change("All Clients"),
+            PrintFunction = fun({ClientName, ClientPid}) -> ps_bench_utils:log_message("~p - ~p", [ClientName, ClientPid]) end,
+            lists:foreach(PrintFunction, ClientList);
+        false ->
+            ok
+    end.
