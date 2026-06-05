@@ -1,4 +1,7 @@
-# PSMark
+# PSMark-MQTT-DAP Extension
+This repo has been forked from `https://github.com/DAMSlabUMBC/PSMark.git` and extended to integrate MQTT-DAP. The below section is a copy of the README from the official PSMark repository, and does not presently contain PSMark-MQTT-DAP specific information.
+
+## PSMark
 
 PSMark is a distributed benchmark for evaluating publish/subscribe middleware in large-scale IoT deployments. It orchestrates synthetic device workloads across one or more nodes, measures end-to-end latency, throughput, and message loss, and supports both MQTT and DDS protocols.
 
