@@ -67,6 +67,9 @@
 -define(MQTT_DEVICE_PURPOSES_PROP, device_purposes).
 -define(MQTT_PURPOSE_VARIANT_COUNT_PROP, purpose_variant_count).
 -define(MQTT_PURPOSE_FANOUT_MODEL_PROP, purpose_fanout_model).
+% Dynamic purpose rotation: window each rotation purpose stays active (ms).
+% 0 (default) disables rotation, leaving all existing scenarios unaffected.
+-define(MQTT_PURPOSE_ROTATION_WINDOW_PROP, purpose_rotation_window_ms).
 % NOTE: We do not require a client interface module as we fall back to a default one
 % NOTE: We do not require a default MQTT QoS as we fall back to 0
 -define(MQTT_REQ_KEY_LIST, [?MQTT_BROKER_IP_PROP, ?MQTT_BROKER_PORT_PROP]).

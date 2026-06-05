@@ -128,6 +128,12 @@ handle_cast(start_client_loops, State = #{device_type := DeviceType, server_refe
         {noreply, State#{pub_task := PubTaskRef, discon_task := DisconLoopTaskRef, recon_task := ReconLoopTaskRef}}
     end;
 
+% Dynamic purpose rotation tick: forward to the interface, which re-registers
+% MPs (publishers) and re-subscribes SP (subscribers) for the current window.
+handle_cast(rotate_purpose, State = #{server_reference := ServerReference}) ->
+    gen_server:cast(ServerReference, rotate_purpose),
+    {noreply, State};
+
 handle_cast(stop, State = #{server_reference := ServerReference, pub_task := PubTaskRef, discon_task := DisconLoopTaskRef, recon_task := ReconLoopTaskRef}) ->
     % Stop all loops
     timer:cancel(PubTaskRef),

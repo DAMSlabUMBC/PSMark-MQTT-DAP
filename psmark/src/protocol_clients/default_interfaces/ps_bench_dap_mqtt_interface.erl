@@ -21,6 +21,19 @@
 ]).
 -define(DEFAULT_NODE_SP, <<"*">>).
 
+%% ===== PLACEHOLDER dynamic-purpose rotation set =====
+%% Christian's test-case section will define the real rotation set and window.
+%% Both the publisher (rotating its registered MP) and the subscriber (rotating
+%% its DAP-SP) derive the active purpose from this SAME list and the SAME clock
+%% window (ps_bench_utils:rotation_purpose/3), which is what keeps them in
+%% LOCKSTEP. The rotation window (ms) is read from the scenario config
+%% (purpose_rotation_window_ms); 0 disables rotation entirely.
+-define(PLACEHOLDER_ROTATION_PURPOSES, [
+    <<"maintenance/predictive">>,
+    <<"maintenance/routine">>,
+    <<"quality/assurance">>
+]).
+
 %% gen_server callbacks
 -export([init/1, handle_call/3,
          handle_cast/2, handle_info/2,
@@ -37,8 +50,17 @@ start_link(ScenarioName, ClientName0, OwnerPid) ->
 init({ScenarioName, RegName, OwnerPid}) ->
     ClientIdBin = ps_bench_utils:convert_to_binary(RegName),
     {ok, PurposeMap} = ps_bench_config_manager:fetch_mqtt_device_purposes(),
+    {ok, RotationWindowMs} = ps_bench_config_manager:fetch_mqtt_purpose_rotation_window_ms(),
     SubPurpose = resolve_node_sp(),
-    {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, registered_topics => #{}, purpose_map => PurposeMap, sub_purpose => SubPurpose}}.
+    {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName,
+           client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true,
+           %% registered_topics maps Topic -> last-registered purpose binary so a
+           %% rotation that changes the purpose forces a fresh MP registration.
+           registered_topics => #{}, purpose_map => PurposeMap,
+           sub_purpose => SubPurpose,
+           rotation_window_ms => RotationWindowMs,
+           sub_topics => [],          %% topics this client is subscribed to (for re-subscribe)
+           applied_sp => undefined}}. %% last DAP-SP actually sent (avoids redundant re-subscribe)
 
 %% Resolve this node's subscription purpose (DAP-SP) from the placeholder map.
 resolve_node_sp() ->
@@ -62,10 +84,12 @@ handle_call(reconnect, _From, State) ->
     % By the MQTT standard, this just starts a clean session if none existed previously
     do_connect(true, State);
 
-handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected, sub_purpose := SubPurpose}) when Connected == true ->
-    DapProperties = Properties#{'User-Property' => [{<<"DAP-SP">>, SubPurpose}]},
+handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected}) when Connected == true ->
+    SP = effective_sp(State),
+    DapProperties = Properties#{'User-Property' => [{<<"DAP-SP">>, SP}]},
     _ = emqtt:subscribe(ClientPid, DapProperties, Topics),
-    {reply, ok, State};
+    %% Remember the topics + applied SP so the rotation timer can re-subscribe.
+    {reply, ok, State#{sub_topics := Topics, applied_sp := SP}};
 
 handle_call({subscribe, _Properties, _Topics}, _From, State = #{connected := Connected}) when Connected == false ->
     % Do nothing if not connected
@@ -77,7 +101,7 @@ handle_call({publish, Properties, Topic, Seq, Payload, PubOpts},
   when is_binary(Topic), is_binary(Payload) ->
     case Connected of
         true ->
-            PurposeBin = purpose_for_topic(Topic, PurposeMap),
+            PurposeBin = effective_pub_purpose(Topic, State),
             NewRegs = ensure_mp_registered(ClientPid, ClientIdBin, Topic, PurposeBin, Regs),
             DapProperties = Properties#{
                 'User-Property' => [
@@ -120,8 +144,75 @@ handle_call(stop, _From, State) ->
 handle_call(_, _, State) ->
     {reply, ok, State}.
 
+%% Dynamic purpose rotation tick (driven by the scenario manager's timer).
+%% A publisher re-registers its MPs with the current scheduled purpose; a
+%% subscriber re-subscribes with the current scheduled SP. Both derive the
+%% purpose from the same clock window, so they stay in lockstep.
+handle_cast(rotate_purpose, State = #{rotation_window_ms := W}) when W > 0 ->
+    State1 = rotate_subscriptions(State),
+    State2 = rotate_registrations(State1),
+    {noreply, State2};
+
 handle_cast(_, State) ->
     {noreply, State}.
+
+%% Re-subscribe with the current rotation SP (subscriber clients only).
+rotate_subscriptions(State = #{connected := true, client_pid := ClientPid,
+                               sub_topics := Topics, applied_sp := Applied})
+  when Topics =/= [] ->
+    SP = effective_sp(State),
+    case SP =:= Applied of
+        true ->
+            State;
+        false ->
+            DapProperties = #{'User-Property' => [{<<"DAP-SP">>, SP}]},
+            _ = emqtt:subscribe(ClientPid, DapProperties, Topics),
+            State#{applied_sp := SP}
+    end;
+rotate_subscriptions(State) ->
+    State.
+
+%% Re-register all known MPs with the current rotation purpose (publisher
+%% clients only). ensure_mp_registered re-publishes only when the purpose
+%% actually changed, so this is a cheap no-op within a window.
+rotate_registrations(State = #{connected := true, client_pid := ClientPid,
+                               client_name := ClientIdBin, registered_topics := Regs})
+  when map_size(Regs) > 0 ->
+    case current_rotation_purpose(State) of
+        undefined ->
+            State;
+        Purpose ->
+            NewRegs = maps:fold(
+                        fun(Topic, _Old, Acc) ->
+                            ensure_mp_registered(ClientPid, ClientIdBin, Topic, Purpose, Acc)
+                        end, Regs, Regs),
+            State#{registered_topics := NewRegs}
+    end;
+rotate_registrations(State) ->
+    State.
+
+%% Active rotation purpose for "now", or undefined when rotation is off.
+current_rotation_purpose(#{rotation_window_ms := W}) when W > 0 ->
+    NowMs = erlang:system_time(millisecond),
+    ps_bench_utils:rotation_purpose(NowMs, W, ?PLACEHOLDER_ROTATION_PURPOSES);
+current_rotation_purpose(_State) ->
+    undefined.
+
+%% Effective subscription purpose: the rotation purpose when rotation is on,
+%% otherwise the per-node placeholder SP (Part 2).
+effective_sp(State = #{sub_purpose := SubPurpose}) ->
+    case current_rotation_purpose(State) of
+        undefined -> SubPurpose;
+        P -> P
+    end.
+
+%% Effective publish (MP) purpose: the rotation purpose when rotation is on,
+%% otherwise the static per-device purpose.
+effective_pub_purpose(Topic, State = #{purpose_map := PurposeMap}) ->
+    case current_rotation_purpose(State) of
+        undefined -> purpose_for_topic(Topic, PurposeMap);
+        P -> P
+    end.
 
 handle_info(Info, State) ->
 
@@ -231,11 +322,16 @@ ensure_emqtt_started() ->
         {error, Reason} -> exit({emqtt_not_started, Reason})
     end.
 
+%% Register the topic's MP, (re-)publishing to $MP_REG whenever the desired
+%% purpose differs from the one last registered for this topic. Keying the cache
+%% on the purpose (not just presence) is what lets a rotation switch the MP - the
+%% broker overwrites the topic's purpose filter on each fresh registration.
 ensure_mp_registered(ClientPid, ClientIdBin, Topic, PurposeBin, Regs) ->
-    case maps:is_key(Topic, Regs) of
-        true ->
+    case maps:get(Topic, Regs, undefined) of
+        PurposeBin ->
+            %% already registered with exactly this purpose
             Regs;
-        false ->
+        _ ->
             MpValue = <<PurposeBin/binary, ":", Topic/binary>>,
             RegProperties = #{'User-Property' => [
                 {<<"DAP-ClientID">>, ClientIdBin},
@@ -243,7 +339,7 @@ ensure_mp_registered(ClientPid, ClientIdBin, Topic, PurposeBin, Regs) ->
                 {<<"DAP-Allow">>, <<"1">>}
             ]},
             emqtt:publish(ClientPid, <<"$MP_REG">>, RegProperties, <<>>, [{qos, 0}]),
-            Regs#{Topic => true}
+            Regs#{Topic => PurposeBin}
     end.
 
 %% Derive the publisher purpose from the device-type suffix of the topic.

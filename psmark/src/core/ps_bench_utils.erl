@@ -12,6 +12,7 @@
 -export([log_message/1, log_message/2, log_state_change/1, log_state_change/2]).
 
 -export([decompose_purpose_filter/1]).
+-export([rotation_index/2, rotation_purpose/3]).
 
 % TODO, Fix RNG seeding
 initialize_rng_seed() ->
@@ -190,6 +191,23 @@ decompose_purpose_filter(Filter) ->
     Filters = string:tokens(Filter, "|"),
     Decomposed = lists:flatmap(fun decompose_single_filter/1, Filters),
     union_preserve_order(Decomposed).
+
+%% Deterministic, wall-clock-driven rotation schedule. Any party (publisher
+%% re-registering its MP, subscriber re-subscribing its SP) that calls this with
+%% the same NowMs window, WindowMs and list lands on the SAME element. That is
+%% what keeps publishers and subscribers in LOCKSTEP across separate nodes
+%% without any coordination message: both derive the active purpose purely from
+%% the clock. (Cross-node lockstep therefore depends on clock sync, e.g. NTP.)
+rotation_index(NowMs, WindowMs) when is_integer(NowMs), is_integer(WindowMs), WindowMs > 0 ->
+    NowMs div WindowMs.
+
+rotation_purpose(_NowMs, _WindowMs, []) ->
+    %% No rotation set configured; caller should treat as "rotation off".
+    undefined;
+rotation_purpose(NowMs, WindowMs, PurposeList) when is_list(PurposeList) ->
+    N = length(PurposeList),
+    Index = rotation_index(NowMs, WindowMs) rem N,
+    lists:nth(Index + 1, PurposeList).
 
 decompose_single_filter(Filter) ->
     Levels = string:tokens(Filter,"/"),

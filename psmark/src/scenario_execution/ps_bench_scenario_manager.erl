@@ -7,6 +7,7 @@
 
 %% public
 -export([initialize_scenario/0, run_scenario/0, stop_scenario/0, clean_up_scenario/0]).
+-export([rotate_all_clients/0]).
 
 % Currently we only support one scenario a run
 initialize_scenario() ->
@@ -33,13 +34,15 @@ run_scenario() ->
     ps_bench_utils:log_message("Starting at ~s and running for ~pms", [TimeStr, DurationMs]),
 
     start_client_loops(),
+    maybe_start_rotation_timer(),
     _Ref = timer:apply_after(DurationMs, ?MODULE, stop_scenario, []).
 
 stop_scenario() ->
     {ok, ScenarioName} = ps_bench_config_manager:fetch_selected_scenario(),
     ps_bench_utils:log_state_change("Stopping Scenario: ~p", [ScenarioName]),
 
-    % Stop clients and notify the benchmarking scenario is complete
+    % Stop the rotation timer (if running), then the clients
+    stop_rotation_timer(),
     stop_publishers(),
     timer:sleep(2000),
     % Note that we don't stop the subscribers here in case other nodes continue to publish for a brief time.
@@ -48,8 +51,58 @@ stop_scenario() ->
 
 clean_up_scenario() ->
     ps_bench_utils:log_state_change("Removing Scenario Clients"),
+    stop_rotation_timer(),
     stop_subscriber(),
     destroy_clients().
+
+%%--------------------------------------------------------------------
+%% Dynamic purpose rotation timer
+%%--------------------------------------------------------------------
+%% When purpose_rotation_window_ms > 0, fire a tick several times per window so
+%% publishers re-register their MP and subscribers re-subscribe their SP to the
+%% current scheduled purpose. Each client derives the purpose from the same
+%% clock window, so they rotate in lockstep.
+maybe_start_rotation_timer() ->
+    {ok, WindowMs} = ps_bench_config_manager:fetch_mqtt_purpose_rotation_window_ms(),
+    case WindowMs of
+        0 ->
+            ok;
+        _ ->
+            CheckMs = max(200, WindowMs div 4),
+            {ok, TRef} = timer:apply_interval(CheckMs, ?MODULE, rotate_all_clients, []),
+            persistent_term:put({?MODULE, rotation_timer}, TRef),
+            ps_bench_utils:log_message("Dynamic purpose rotation enabled: window=~pms, check=~pms",
+                                       [WindowMs, CheckMs])
+    end.
+
+stop_rotation_timer() ->
+    case persistent_term:get({?MODULE, rotation_timer}, undefined) of
+        undefined ->
+            ok;
+        TRef ->
+            timer:cancel(TRef),
+            persistent_term:erase({?MODULE, rotation_timer})
+    end.
+
+%% Cast a rotation tick to every live client of this node (guarded by role so a
+%% subscriber-only node never touches an absent device_clients key).
+rotate_all_clients() ->
+    case has_publishers() of
+        true ->
+            ClientList = persistent_term:get({?MODULE, device_clients}, []),
+            lists:foreach(fun({_N, Pid}) -> gen_server:cast(Pid, rotate_purpose) end, ClientList);
+        false ->
+            ok
+    end,
+    case has_subscriber() of
+        true ->
+            case persistent_term:get({?MODULE, subscription_client}, undefined) of
+                undefined -> ok;
+                {_N, SubPid} -> gen_server:cast(SubPid, rotate_purpose)
+            end;
+        false ->
+            ok
+    end.
 
 initialize_clients() ->
 
