@@ -12,7 +12,7 @@
     [
         {client_interface_module, ps_bench_topic_encoded_mqtt_interface},
         {broker, "127.0.0.1"},
-        {port, 1883},
+        {port, 1884},
         {qos,
         [
             {default_qos, 0}
