@@ -1,0 +1,33 @@
+[
+    {name, baseline_2srv_2x},
+    {duration, {3, minutes}},
+    {protocol, mqttv5},
+    {deployment_name, smart_factory_2x_2_node},
+    {hosts,
+    [
+        {runner1, [{hostname, "127.0.0.1"}]},
+        {runner2, [{hostname, "127.0.0.1"}]}
+    ]},
+
+    {protocol_config,
+    [
+        {broker, "127.0.0.1"},
+        {port, 1884},
+        {qos,
+        [
+            {default_qos, 0}
+        ]}
+    ]},
+
+    {metric_config,
+    [
+        {output_dir, "results"},
+        {hw_stats_poll_period_ms, 1000},
+        {metric_plugins,
+        [
+            {ps_bench_throughput_calc_plugin, erlang},
+            {ps_bench_latency_calc_plugin, erlang},
+            {ps_bench_dropped_message_calc_plugin, erlang}
+        ]}
+    ]}
+].

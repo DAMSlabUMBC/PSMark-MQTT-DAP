@@ -1,0 +1,46 @@
+[
+    {name, topic_smoke},
+    {duration, {30, seconds}},
+    {protocol, mqttv5},
+    {deployment_name, smart_factory_1_node},
+    {hosts,
+    [
+        {runner1, [{hostname, "127.0.0.1"}]}
+    ]},
+
+    {protocol_config,
+    [
+        {client_interface_module, ps_bench_topic_encoded_mqtt_interface},
+        {broker, "127.0.0.1"},
+        {port, 1884},
+        {qos,
+        [
+            {default_qos, 0}
+        ]},
+        {device_purposes,
+        [
+            {machine_temperature_sensor, "p1"},
+            {machine_speed_sensor,       "p1"},
+            {machine_energy_consumption, "p1"},
+            {production_quality_sensor,  "p2"},
+            {vibration_sensor,           "p2"},
+            {robot_farmap,               "p2"},
+            {robot_nearmap,              "p3"},
+            {robot_imu,                  "p3"},
+            {robot_lidar,                "p3"},
+            {robot_odometry,             "p3"}
+        ]}
+    ]},
+
+    {metric_config,
+    [
+        {output_dir, "results"},
+        {hw_stats_poll_period_ms, 1000},
+        {metric_plugins,
+        [
+            {ps_bench_throughput_calc_plugin, erlang},
+            {ps_bench_latency_calc_plugin, erlang},
+            {ps_bench_dropped_message_calc_plugin, erlang}
+        ]}
+    ]}
+].

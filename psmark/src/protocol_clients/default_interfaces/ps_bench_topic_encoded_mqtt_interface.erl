@@ -48,40 +48,22 @@ handle_call({publish, Properties, Topic, _Seq, Payload, PubOpts},
   when is_binary(Topic), is_binary(Payload) ->
     case Connected of
         true ->
-            PurposeBin = purpose_for_topic(Topic, PurposeMap),
-            %% Prepend system time so payload matches decode_seq_header/1
-            TimeNs = erlang:system_time(nanosecond),
-            Payload1 = <<TimeNs:64/unsigned, Payload/binary>>,
+            PurposeList = purposes_for_topic(Topic, PurposeMap),
+            %% Decompose purpose list into discrete purposes to send
+            AllPurposeList = lists:flatmap(fun(X) -> ps_bench_utils:decompose_purpose_filter(X) end, PurposeList),
+
             %% Topic-based purpose amplification: publish the same logical message
-            %% under several purpose-topic labels. The N variants of this device's
-            %% base purpose are [P], [P_2], ..., [P_N]. The fan-out model decides
-            %% which labels go on the wire:
-            %%   linear   -> one per variant            (N labels)
-            %%   powerset -> one per non-empty subset    (2^N - 1 labels, joined by
-            %%               '.', matching the paper's Observation 1)
-            %% NB: the join separator must be a legal MQTT publish-topic char -
-            %% NOT '+'/'#' (wildcards, rejected by the broker), '/' (level sep), or
-            %% '_' (variant sep). '.' is safe.
-            %% Subscribers use a qos_N/# wildcard, so the broker delivers every
-            %% label -> that many wire copies per logical publish. VariantCount
-            %% defaults to 1 and FanoutModel to linear, so other scenarios are
-            %% unaffected.
-            N = max(1, VariantCount),
-            Variants = [ variant_label(I, PurposeBin) || I <- lists:seq(1, N) ],
-            Labels =
-                case FanoutModel of
-                    powerset ->
-                        [ join_binaries(subset_members(Mask, Variants), <<".">>)
-                          || Mask <- lists:seq(1, (1 bsl N) - 1) ];
-                    _ ->
-                        Variants
-                end,
+            %% under several purpose-topic labels
             lists:foreach(
               fun(Label) ->
-                  EncodedTopic = <<Topic/binary, "/[", Label/binary, "]">>,
+                  PurposeBin = ps_bench_utils:convert_to_binary(Label),
+                  EncodedTopic = <<Topic/binary, "/[", PurposeBin/binary, "]">>,
+                  %% Prepend system time so payload matches decode_seq_header/1
+                  TimeNs = erlang:system_time(nanosecond),
+                  Payload1 = <<TimeNs:64/unsigned, Payload/binary>>,
                   emqtt:publish(ClientPid, EncodedTopic, Properties, Payload1, PubOpts)
               end,
-              Labels),
+              AllPurposeList),
             {reply, {ok, published}, State};
         false ->
             %% Not connected; swallow to keep orchestration alive
@@ -212,32 +194,14 @@ ensure_emqtt_started() ->
 %% Topics follow ps_bench/device/qos_<N>/<device_type>. With no mapping
 %% configured the encoded topic uses a default token so the shape is
 %% still <topic>/[<purpose>].
-purpose_for_topic(Topic, PurposeMap) ->
+purposes_for_topic(Topic, PurposeMap) ->
     case binary:split(Topic, <<"/">>, [global]) of
         [_, _, _, DeviceTypeBin] when PurposeMap =/= [] ->
             DeviceType = binary_to_atom(DeviceTypeBin, utf8),
             case proplists:get_value(DeviceType, PurposeMap) of
-                undefined -> <<"p1">>;
-                P when is_list(P) -> list_to_binary(P);
-                P when is_binary(P) -> P;
-                P when is_atom(P) -> atom_to_binary(P, utf8)
+                undefined -> ["p1"];
+                P -> P
             end;
         _ ->
-            <<"p1">>
+            ["p1"]
     end.
-
-%% The I-th variant label of a base purpose: variant 1 is the base purpose
-%% itself; variant I>1 is "<base>_<I>".
-variant_label(1, PurposeBin) -> PurposeBin;
-variant_label(I, PurposeBin) -> <<PurposeBin/binary, "_", (integer_to_binary(I))/binary>>.
-
-%% The members of Variants selected by the bits set in Mask, kept in variant
-%% order so each subset maps to one canonical (ordered) label.
-subset_members(Mask, Variants) ->
-    [ V || {I, V} <- lists:zip(lists:seq(0, length(Variants) - 1), Variants),
-           (Mask bsr I) band 1 =:= 1 ].
-
-%% Join binaries with Sep between them (no leading/trailing separator).
-join_binaries([], _Sep) -> <<>>;
-join_binaries([H | T], Sep) ->
-    lists:foldl(fun(B, Acc) -> <<Acc/binary, Sep/binary, B/binary>> end, H, T).
