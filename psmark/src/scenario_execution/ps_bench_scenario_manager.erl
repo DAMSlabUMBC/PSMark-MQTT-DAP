@@ -124,6 +124,8 @@ maybe_start_op_timer() ->
     end.
 
 stop_op_timer() ->
+    %% Drop any pinned single-issuer selection so the next run re-pins fresh.
+    persistent_term:erase({?MODULE, op_issuer}),
     case persistent_term:get({?MODULE, op_timer}, undefined) of
         undefined ->
             ok;
@@ -132,18 +134,55 @@ stop_op_timer() ->
             persistent_term:erase({?MODULE, op_timer})
     end.
 
-%% Each publisher issues an operation scoped to its OWN data (the interface
-%% derives DAP-OpTFs/OpPFs from its registered topics/purposes).
+%% Issue operations scoped to the issuer's OWN data (the interface derives
+%% DAP-OpTFs/OpPFs from each issuer's registered topics/purposes). Two things are
+%% selectable per Christian's matrix:
+%%   * issuer mode  - single_random (one pinned publisher) vs all_publishers;
+%%   * op group     - which op types are issued (no_queue vs queue group).
+%% Own-data scoping holds in BOTH issuer modes - a single random issuer still
+%% scopes to its own topic/purpose.
 issue_ops_from_publishers() ->
     case has_publishers() of
         true ->
+            {ok, Mode} = ps_bench_config_manager:fetch_mqtt_op_issuer_mode(),
+            {ok, OpTypes} = ps_bench_config_manager:fetch_mqtt_op_group_types(),
             ClientList = persistent_term:get({?MODULE, device_clients}, []),
+            Issuers = select_op_issuers(Mode, ClientList),
             lists:foreach(fun({_N, Pid}) ->
-                              gen_server:cast(Pid, {issue_operation, ?PLACEHOLDER_OP_TYPE})
-                          end, ClientList);
+                              lists:foreach(fun(OpType) ->
+                                                gen_server:cast(Pid, {issue_operation, OpType})
+                                            end, OpTypes)
+                          end, Issuers);
         false ->
             ok
     end.
+
+%% all_publishers -> everyone; single_random -> one publisher, pinned for the run
+%% so the same issuer is reused each interval (deterministic from the RNG seed).
+select_op_issuers(_Mode, []) ->
+    [];
+select_op_issuers(?OP_ISSUER_MODE_SINGLE, ClientList) ->
+    case persistent_term:get({?MODULE, op_issuer}, undefined) of
+        Pinned when Pinned =/= undefined ->
+            case lists:member(Pinned, ClientList) of
+                true  -> [Pinned];
+                false -> [pin_random_issuer(ClientList)]
+            end;
+        undefined ->
+            [pin_random_issuer(ClientList)]
+    end;
+select_op_issuers(_AllPublishers, ClientList) ->
+    ClientList.
+
+%% Choose one issuer deterministically from the RNG seed (stable across the run
+%% and reproducible), pin it, and return it.
+pin_random_issuer(ClientList) ->
+    Sorted = lists:sort(ClientList),
+    N = length(Sorted),
+    Idx = (erlang:phash2(ps_bench_utils:fetch_rng_seed()) rem N) + 1,
+    Chosen = lists:nth(Idx, Sorted),
+    persistent_term:put({?MODULE, op_issuer}, Chosen),
+    Chosen.
 
 initialize_clients() ->
 

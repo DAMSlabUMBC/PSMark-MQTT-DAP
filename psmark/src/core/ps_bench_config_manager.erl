@@ -13,7 +13,7 @@
     fetch_device_reconnect_info/1]).
 
 % MQTT exports
--export([fetch_mqtt_client_module/0, fetch_mqtt_broker_information/0, fetch_mqtt_default_qos/0, fetch_mqtt_qos_for_device/1, fetch_mqtt_device_purposes/0, fetch_mqtt_purpose_variant_count/0, fetch_mqtt_purpose_fanout_model/0, fetch_mqtt_purpose_rotation_window_ms/0, fetch_mqtt_op_issue_interval_ms/0]).
+-export([fetch_mqtt_client_module/0, fetch_mqtt_broker_information/0, fetch_mqtt_default_qos/0, fetch_mqtt_qos_for_device/1, fetch_mqtt_device_purposes/0, fetch_mqtt_purpose_variant_count/0, fetch_mqtt_purpose_fanout_model/0, fetch_mqtt_purpose_rotation_window_ms/0, fetch_mqtt_op_issue_interval_ms/0, fetch_mqtt_op_issuer_mode/0, fetch_mqtt_op_group_types/0]).
 
 % DDS exports
 -export([fetch_dds_nif_information/0, fetch_dds_domain_id/0, fetch_dds_config_file_path/0, fetch_dds_qos_profile/0]).
@@ -324,7 +324,8 @@ process_mqtt_config(ProtocolProps, ProtocolVersion, ScenarioName) ->
     NonReqKeys = PropListKeys -- ?MQTT_REQ_KEY_LIST,
     ExtraKeys = NonReqKeys -- [?MQTT_CLIENT_INTERFACE_MODULE_PROP, ?MQTT_QOS_PROP, ?MQTT_DEVICE_PURPOSES_PROP,
                                ?MQTT_PURPOSE_VARIANT_COUNT_PROP, ?MQTT_PURPOSE_FANOUT_MODEL_PROP,
-                               ?MQTT_PURPOSE_ROTATION_WINDOW_PROP, ?MQTT_OP_ISSUE_INTERVAL_PROP],
+                               ?MQTT_PURPOSE_ROTATION_WINDOW_PROP, ?MQTT_OP_ISSUE_INTERVAL_PROP,
+                               ?MQTT_OP_ISSUER_MODE_PROP, ?MQTT_OP_GROUP_PROP],
     MissingKeys = ?MQTT_REQ_KEY_LIST -- PropListKeys,
 
     % Having extra keys is just a warning, disregard return of the case
@@ -484,6 +485,22 @@ fetch_mqtt_op_issue_interval_ms() ->
     case fetch_protocol_property(?MQTT_OP_ISSUE_INTERVAL_PROP, 0) of
         {ok, N} when is_integer(N), N >= 0 -> {ok, N};
         _ -> {ok, 0}
+    end.
+
+%% Operation issuer mode. all_publishers (default) = every publisher issues;
+%% single_random = one pinned random publisher issues. Both scope to own data.
+fetch_mqtt_op_issuer_mode() ->
+    case fetch_protocol_property(?MQTT_OP_ISSUER_MODE_PROP, ?OP_ISSUER_MODE_ALL) of
+        {ok, M} when M =:= ?OP_ISSUER_MODE_SINGLE; M =:= ?OP_ISSUER_MODE_ALL -> {ok, M};
+        _ -> {ok, ?OP_ISSUER_MODE_ALL}
+    end.
+
+%% Operation group -> the list of op types to issue. no_queue (default) =
+%% AUDIT/HISTORY/UPDATE; queue = DELETE/RESTRICT.
+fetch_mqtt_op_group_types() ->
+    case fetch_protocol_property(?MQTT_OP_GROUP_PROP, ?OP_GROUP_NO_QUEUE) of
+        {ok, ?OP_GROUP_QUEUE} -> {ok, ?PLACEHOLDER_OP_GROUP_QUEUE};
+        _ -> {ok, ?PLACEHOLDER_OP_GROUP_NO_QUEUE}
     end.
 
 fetch_dds_nif_information() ->

@@ -143,8 +143,26 @@
 % ===== PLACEHOLDER operation issuance (Christian's test section defines real values) =====
 % op_issue_interval_ms: 0 (default) disables publisher op issuance entirely.
 -define(MQTT_OP_ISSUE_INTERVAL_PROP, op_issue_interval_ms).
-% Default op type a publisher issues, scoped to its own topic/purpose.
--define(PLACEHOLDER_OP_TYPE, <<"HISTORY">>).
+
+% Operation ISSUER MODE selects WHO issues operations each interval. Both modes
+% scope the operation to the ISSUER's OWN topic/purpose (DAP-OpTFs/OpPFs); they
+% differ only in how many publishers issue:
+%   all_publishers (default) - every connected publisher issues (matrix iii/iv);
+%   single_random            - one randomly chosen publisher, pinned for the run,
+%                              issues (matrix i/ii). It still scopes to its own data.
+-define(MQTT_OP_ISSUER_MODE_PROP, op_issuer_mode).
+-define(OP_ISSUER_MODE_ALL, all_publishers).
+-define(OP_ISSUER_MODE_SINGLE, single_random).
+
+% Operation GROUP selects WHICH operations are issued. Christian's matrix tests
+% the queue-free group (AUDIT/HISTORY/UPDATE) separately from the queue-
+% interacting group (DELETE/RESTRICT). The op-type lists are placeholders his
+% test section may refine.
+-define(MQTT_OP_GROUP_PROP, op_group).
+-define(OP_GROUP_NO_QUEUE, no_queue).            % AUDIT/HISTORY/UPDATE, no queue interaction
+-define(OP_GROUP_QUEUE, queue).                  % DELETE/RESTRICT, queue interaction
+-define(PLACEHOLDER_OP_GROUP_NO_QUEUE, [<<"AUDIT">>, <<"HISTORY">>, <<"UPDATE">>]).
+-define(PLACEHOLDER_OP_GROUP_QUEUE, [<<"DELETE">>, <<"RESTRICT">>]).
 
 % Records for metric storage
 -define(PUB_AGG_RECORD_NAME, pub_aggregate).
