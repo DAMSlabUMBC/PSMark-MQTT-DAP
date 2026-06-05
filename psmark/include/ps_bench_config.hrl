@@ -122,6 +122,30 @@
 -define(SUBSCRIBED_MSG, subscribed).
 -define(UNSUBSCRIBED_MSG, unsubscribed).
 
+% DAP operation wire constants. These MUST match the broker exactly
+% (mqtt-dap-mosquitto include/mosquitto/defs.h); they are NOT the Python
+% GlobalDefs values, which drift (e.g. ORS is "OP_REQ" here, "ORS" there).
+-define(DAP_TOPIC_OSYS, <<"$OP_SYS">>).      % op submit / status bus
+-define(DAP_TOPIC_OP_REQ, <<"OP_REQ">>).     % forwarded request inbox base: OP_REQ/<client-id>
+-define(DAP_TOPIC_OP_NOTIF, <<"OP_NOTIF">>). % requester notification base: OP_NOTIF/<client-id>
+-define(DAP_OP_PURPOSE, <<"DAP_OP">>).       % operation-processing consent/purpose value
+-define(DAP_KEY_CONSENT, <<"DAP-Allow">>).
+-define(DAP_KEY_CLIENTID, <<"DAP-ClientID">>).
+-define(DAP_KEY_SP, <<"DAP-SP">>).
+-define(DAP_KEY_OPTYPE, <<"DAP-OpType">>).
+-define(DAP_KEY_OPID, <<"DAP-OpId">>).
+-define(DAP_KEY_OPTFS, <<"DAP-OpTFs">>).
+-define(DAP_KEY_OPPFS, <<"DAP-OpPFs">>).
+-define(DAP_KEY_STATUS, <<"DAP-Status">>).
+-define(DAP_KEY_REASON, <<"DAP-Reason">>).
+-define(DAP_ALLOW_ALL_FILTER, <<"*">>).      % MOSQ_DAP_ALLOW_ALL_FILTER
+
+% ===== PLACEHOLDER operation issuance (Christian's test section defines real values) =====
+% op_issue_interval_ms: 0 (default) disables publisher op issuance entirely.
+-define(MQTT_OP_ISSUE_INTERVAL_PROP, op_issue_interval_ms).
+% Default op type a publisher issues, scoped to its own topic/purpose.
+-define(PLACEHOLDER_OP_TYPE, <<"HISTORY">>).
+
 % Records for metric storage
 -define(PUB_AGG_RECORD_NAME, pub_aggregate).
 -record(?PUB_AGG_RECORD_NAME, {node_name, binary_aggregate}).

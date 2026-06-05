@@ -160,7 +160,7 @@ loop(SubName, PubName, RotateSubscriber, Deadline, Acc) ->
 %% tally for display.
 collect_into(Acc) ->
     receive
-        {publish_recv, {_TimeNs, _Topic, _Payload}, _ClientName} ->
+        {publish_recv, {_TimeNs, _Topic, _Payload, _Props}, _ClientName} ->
             RecvMs = erlang:system_time(millisecond),
             Win = ps_bench_utils:rotation_index(RecvMs, ?WINDOW_MS),
             Purpose = ps_bench_utils:rotation_purpose(RecvMs, ?WINDOW_MS, ?ROT_SET),

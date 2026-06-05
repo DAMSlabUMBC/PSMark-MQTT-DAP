@@ -94,7 +94,7 @@ publish(Client, Topic) ->
 
 drain_recv(Acc) ->
     receive
-        {publish_recv, {_TimeNs, Topic, _Payload}, _ClientName} ->
+        {publish_recv, {_TimeNs, Topic, _Payload, _Props}, _ClientName} ->
             drain_recv([Topic | Acc]);
         _Other ->
             drain_recv(Acc)

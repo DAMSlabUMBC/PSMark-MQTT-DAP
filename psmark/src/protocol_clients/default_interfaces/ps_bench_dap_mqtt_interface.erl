@@ -84,10 +84,15 @@ handle_call(reconnect, _From, State) ->
     % By the MQTT standard, this just starts a clean session if none existed previously
     do_connect(true, State);
 
-handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected}) when Connected == true ->
+handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, client_name := ClientIdBin, connected := Connected}) when Connected == true ->
     SP = effective_sp(State),
-    DapProperties = Properties#{'User-Property' => [{<<"DAP-SP">>, SP}]},
+    DapProperties = Properties#{'User-Property' => [{?DAP_KEY_SP, SP}]},
     _ = emqtt:subscribe(ClientPid, DapProperties, Topics),
+    %% Also listen on this subscriber's operation-request inbox (OP_REQ/<id>) so
+    %% the broker can forward scoped operations about the data it received. The
+    %% inbox is an op-system topic (SP-exempt); we still attach DAP-SP=DAP_OP by
+    %% convention.
+    _ = subscribe_op_request_inbox(ClientPid, ClientIdBin),
     %% Remember the topics + applied SP so the rotation timer can re-subscribe.
     {reply, ok, State#{sub_topics := Topics, applied_sp := SP}};
 
@@ -97,7 +102,7 @@ handle_call({subscribe, _Properties, _Topics}, _From, State = #{connected := Con
 
 handle_call({publish, Properties, Topic, Seq, Payload, PubOpts},
             _From,
-            State = #{client_pid := ClientPid, client_name := ClientIdBin, connected := Connected, registered_topics := Regs, purpose_map := PurposeMap})
+            State = #{client_pid := ClientPid, client_name := ClientIdBin, connected := Connected, registered_topics := Regs})
   when is_binary(Topic), is_binary(Payload) ->
     case Connected of
         true ->
@@ -153,8 +158,81 @@ handle_cast(rotate_purpose, State = #{rotation_window_ms := W}) when W > 0 ->
     State2 = rotate_registrations(State1),
     {noreply, State2};
 
+%% Issue an operation scoped to THIS publisher's own data. OpTFs/OpPFs are the
+%% topics and purposes this client has registered MPs for - the same per-issuer
+%% scoping proven on the Python side. Submitted to $OP_SYS; the broker forwards
+%% it to the subscribers that received this publisher's matching data.
+handle_cast({issue_operation, OpType}, State = #{connected := true, client_pid := ClientPid,
+                                                 client_name := ClientIdBin, registered_topics := Regs}) ->
+    OpTFs = join_binaries(maps:keys(Regs), <<",">>, ?DAP_ALLOW_ALL_FILTER),
+    OpPFs = join_binaries(lists:usort(maps:values(Regs)), <<",">>, ?DAP_ALLOW_ALL_FILTER),
+    %% Listen for the broker's status notification about our own requests.
+    Notif = <<(?DAP_TOPIC_OP_NOTIF)/binary, "/", ClientIdBin/binary>>,
+    _ = emqtt:subscribe(ClientPid, #{'User-Property' => [{?DAP_KEY_SP, ?DAP_OP_PURPOSE}]},
+                        [{Notif, [{qos, 0}]}]),
+    OpProps = #{'User-Property' => [
+                    {?DAP_KEY_OPTYPE, OpType},
+                    {?DAP_KEY_OPTFS, OpTFs},
+                    {?DAP_KEY_OPPFS, OpPFs},
+                    {?DAP_KEY_CLIENTID, ClientIdBin},
+                    {?DAP_KEY_CONSENT, <<"1">>}
+                ],
+                'Response-Topic' => Notif},
+    emqtt:publish(ClientPid, ?DAP_TOPIC_OSYS, OpProps, <<>>, [{qos, 0}]),
+    {noreply, State};
+handle_cast({issue_operation, _OpType}, State) ->
+    %% not connected yet; drop quietly to keep orchestration alive
+    {noreply, State};
+
+%% Respond to a broker-forwarded operation request (subscriber side). Echo the
+%% broker's numeric DAP-OpId and the DAP-OpType so the status correlates, and
+%% report Success on $OP_SYS; the broker relays it to the requester's OP_NOTIF.
+handle_cast({respond_to_op, Props}, State = #{connected := true, client_pid := ClientPid,
+                                              client_name := ClientIdBin}) ->
+    OpType = prop_value(?DAP_KEY_OPTYPE, Props, <<>>),
+    OpId = prop_value(?DAP_KEY_OPID, Props, undefined),
+    Base = [
+        {?DAP_KEY_STATUS, <<"Success">>},
+        {?DAP_KEY_OPTYPE, OpType},
+        {?DAP_KEY_CLIENTID, ClientIdBin},
+        {?DAP_KEY_CONSENT, <<"1">>}
+    ],
+    UserProps = case OpId of
+                    undefined -> Base;
+                    _ -> [{?DAP_KEY_OPID, OpId} | Base]
+                end,
+    emqtt:publish(ClientPid, ?DAP_TOPIC_OSYS, #{'User-Property' => UserProps}, <<>>, [{qos, 0}]),
+    {noreply, State};
+handle_cast({respond_to_op, _Props}, State) ->
+    {noreply, State};
+
 handle_cast(_, State) ->
     {noreply, State}.
+
+%% Subscribe a client to its OP_REQ/<id> operation-request inbox.
+subscribe_op_request_inbox(ClientPid, ClientIdBin) ->
+    Inbox = <<(?DAP_TOPIC_OP_REQ)/binary, "/", ClientIdBin/binary>>,
+    emqtt:subscribe(ClientPid, #{'User-Property' => [{?DAP_KEY_SP, ?DAP_OP_PURPOSE}]},
+                    [{Inbox, [{qos, 0}]}]).
+
+%% Join a list of binaries with Sep, or return Default for the empty list.
+join_binaries([], _Sep, Default) -> Default;
+join_binaries([First | Rest], Sep, _Default) ->
+    lists:foldl(fun(B, Acc) -> <<Acc/binary, Sep/binary, B/binary>> end, First, Rest).
+
+%% Read a user-property value (binary) from an emqtt properties map.
+prop_value(Key, Props, Default) when is_map(Props) ->
+    case maps:get('User-Property', Props, []) of
+        UPs when is_list(UPs) ->
+            case lists:keyfind(Key, 1, UPs) of
+                {Key, V} -> V;
+                false -> Default
+            end;
+        _ ->
+            Default
+    end;
+prop_value(_Key, _Props, Default) ->
+    Default.
 
 %% Re-subscribe with the current rotation SP (subscriber clients only).
 rotate_subscriptions(State = #{connected := true, client_pid := ClientPid,
@@ -309,10 +387,12 @@ disconnect_event(OwnerPid, Reason, ClientName) ->
     OwnerPid ! {?DISCONNECTED_MSG, {TimeNs, Reason}, ClientName},
     ok.
 
-publish_event(OwnerPid, _Msg = #{topic := Topic, payload := Payload}, ClientName) ->
-    % Forward required event information to the adapter
+publish_event(OwnerPid, Msg = #{topic := Topic, payload := Payload}, ClientName) ->
+    % Forward required event information to the adapter, now including the MQTT
+    % properties so DAP operation requests/notifications can be recognized.
+    Props = maps:get(properties, Msg, undefined),
     TimeNs = erlang:system_time(nanosecond),
-    OwnerPid ! {?PUBLISH_RECV_MSG, {TimeNs, Topic, Payload}, ClientName},
+    OwnerPid ! {?PUBLISH_RECV_MSG, {TimeNs, Topic, Payload, Props}, ClientName},
     ok.
 
 ensure_emqtt_started() ->

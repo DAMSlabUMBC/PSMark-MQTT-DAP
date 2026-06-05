@@ -13,7 +13,7 @@
     fetch_device_reconnect_info/1]).
 
 % MQTT exports
--export([fetch_mqtt_client_module/0, fetch_mqtt_broker_information/0, fetch_mqtt_default_qos/0, fetch_mqtt_qos_for_device/1, fetch_mqtt_device_purposes/0, fetch_mqtt_purpose_variant_count/0, fetch_mqtt_purpose_fanout_model/0, fetch_mqtt_purpose_rotation_window_ms/0]).
+-export([fetch_mqtt_client_module/0, fetch_mqtt_broker_information/0, fetch_mqtt_default_qos/0, fetch_mqtt_qos_for_device/1, fetch_mqtt_device_purposes/0, fetch_mqtt_purpose_variant_count/0, fetch_mqtt_purpose_fanout_model/0, fetch_mqtt_purpose_rotation_window_ms/0, fetch_mqtt_op_issue_interval_ms/0]).
 
 % DDS exports
 -export([fetch_dds_nif_information/0, fetch_dds_domain_id/0, fetch_dds_config_file_path/0, fetch_dds_qos_profile/0]).
@@ -324,7 +324,7 @@ process_mqtt_config(ProtocolProps, ProtocolVersion, ScenarioName) ->
     NonReqKeys = PropListKeys -- ?MQTT_REQ_KEY_LIST,
     ExtraKeys = NonReqKeys -- [?MQTT_CLIENT_INTERFACE_MODULE_PROP, ?MQTT_QOS_PROP, ?MQTT_DEVICE_PURPOSES_PROP,
                                ?MQTT_PURPOSE_VARIANT_COUNT_PROP, ?MQTT_PURPOSE_FANOUT_MODEL_PROP,
-                               ?MQTT_PURPOSE_ROTATION_WINDOW_PROP],
+                               ?MQTT_PURPOSE_ROTATION_WINDOW_PROP, ?MQTT_OP_ISSUE_INTERVAL_PROP],
     MissingKeys = ?MQTT_REQ_KEY_LIST -- PropListKeys,
 
     % Having extra keys is just a warning, disregard return of the case
@@ -475,6 +475,13 @@ fetch_mqtt_purpose_fanout_model() ->
 %% Dynamic purpose rotation window in ms. 0 (default) = rotation disabled.
 fetch_mqtt_purpose_rotation_window_ms() ->
     case fetch_protocol_property(?MQTT_PURPOSE_ROTATION_WINDOW_PROP, 0) of
+        {ok, N} when is_integer(N), N >= 0 -> {ok, N};
+        _ -> {ok, 0}
+    end.
+
+%% Publisher operation issuance interval in ms. 0 (default) = no op issuance.
+fetch_mqtt_op_issue_interval_ms() ->
+    case fetch_protocol_property(?MQTT_OP_ISSUE_INTERVAL_PROP, 0) of
         {ok, N} when is_integer(N), N >= 0 -> {ok, N};
         _ -> {ok, 0}
     end.

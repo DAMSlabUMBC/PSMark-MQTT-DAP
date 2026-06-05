@@ -7,7 +7,7 @@
 
 %% public
 -export([initialize_scenario/0, run_scenario/0, stop_scenario/0, clean_up_scenario/0]).
--export([rotate_all_clients/0]).
+-export([rotate_all_clients/0, issue_ops_from_publishers/0]).
 
 % Currently we only support one scenario a run
 initialize_scenario() ->
@@ -35,14 +35,16 @@ run_scenario() ->
 
     start_client_loops(),
     maybe_start_rotation_timer(),
+    maybe_start_op_timer(),
     _Ref = timer:apply_after(DurationMs, ?MODULE, stop_scenario, []).
 
 stop_scenario() ->
     {ok, ScenarioName} = ps_bench_config_manager:fetch_selected_scenario(),
     ps_bench_utils:log_state_change("Stopping Scenario: ~p", [ScenarioName]),
 
-    % Stop the rotation timer (if running), then the clients
+    % Stop the rotation/op timers (if running), then the clients
     stop_rotation_timer(),
+    stop_op_timer(),
     stop_publishers(),
     timer:sleep(2000),
     % Note that we don't stop the subscribers here in case other nodes continue to publish for a brief time.
@@ -52,6 +54,7 @@ stop_scenario() ->
 clean_up_scenario() ->
     ps_bench_utils:log_state_change("Removing Scenario Clients"),
     stop_rotation_timer(),
+    stop_op_timer(),
     stop_subscriber(),
     destroy_clients().
 
@@ -100,6 +103,44 @@ rotate_all_clients() ->
                 undefined -> ok;
                 {_N, SubPid} -> gen_server:cast(SubPid, rotate_purpose)
             end;
+        false ->
+            ok
+    end.
+
+%%--------------------------------------------------------------------
+%% Operation issuance timer (publishers issue ops scoped to their own data)
+%%--------------------------------------------------------------------
+%% When op_issue_interval_ms > 0, each publisher periodically issues an
+%% operation (placeholder type) scoped to its own topic/purpose. 0 disables it.
+maybe_start_op_timer() ->
+    {ok, IntervalMs} = ps_bench_config_manager:fetch_mqtt_op_issue_interval_ms(),
+    case IntervalMs of
+        0 ->
+            ok;
+        _ ->
+            {ok, TRef} = timer:apply_interval(IntervalMs, ?MODULE, issue_ops_from_publishers, []),
+            persistent_term:put({?MODULE, op_timer}, TRef),
+            ps_bench_utils:log_message("Publisher operation issuance enabled: interval=~pms", [IntervalMs])
+    end.
+
+stop_op_timer() ->
+    case persistent_term:get({?MODULE, op_timer}, undefined) of
+        undefined ->
+            ok;
+        TRef ->
+            timer:cancel(TRef),
+            persistent_term:erase({?MODULE, op_timer})
+    end.
+
+%% Each publisher issues an operation scoped to its OWN data (the interface
+%% derives DAP-OpTFs/OpPFs from its registered topics/purposes).
+issue_ops_from_publishers() ->
+    case has_publishers() of
+        true ->
+            ClientList = persistent_term:get({?MODULE, device_clients}, []),
+            lists:foreach(fun({_N, Pid}) ->
+                              gen_server:cast(Pid, {issue_operation, ?PLACEHOLDER_OP_TYPE})
+                          end, ClientList);
         false ->
             ok
     end.

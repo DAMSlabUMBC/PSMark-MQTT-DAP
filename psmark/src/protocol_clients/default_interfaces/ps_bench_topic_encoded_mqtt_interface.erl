@@ -178,9 +178,11 @@ disconnect_event(OwnerPid, Reason, ClientName) ->
     OwnerPid ! {?DISCONNECTED_MSG, {TimeNs, Reason}, ClientName},
     ok.
 
-publish_event(OwnerPid, _Msg = #{topic := Topic, payload := Payload}, ClientName) ->
+publish_event(OwnerPid, Msg = #{topic := Topic, payload := Payload}, ClientName) ->
+    %% 4-tuple incl. properties to match the shared PUBLISH_RECV contract.
+    Props = maps:get(properties, Msg, undefined),
     TimeNs = erlang:system_time(nanosecond),
-    OwnerPid ! {?PUBLISH_RECV_MSG, {TimeNs, Topic, Payload}, ClientName},
+    OwnerPid ! {?PUBLISH_RECV_MSG, {TimeNs, Topic, Payload, Props}, ClientName},
     ok.
 
 ensure_emqtt_started() ->

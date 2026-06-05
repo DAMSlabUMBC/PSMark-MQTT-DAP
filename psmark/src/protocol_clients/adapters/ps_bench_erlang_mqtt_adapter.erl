@@ -134,6 +134,12 @@ handle_cast(rotate_purpose, State = #{server_reference := ServerReference}) ->
     gen_server:cast(ServerReference, rotate_purpose),
     {noreply, State};
 
+% Operation-issue tick: forward to the interface, which submits an operation
+% scoped to this publisher's own topic/purpose.
+handle_cast({issue_operation, OpType}, State = #{server_reference := ServerReference}) ->
+    gen_server:cast(ServerReference, {issue_operation, OpType}),
+    {noreply, State};
+
 handle_cast(stop, State = #{server_reference := ServerReference, pub_task := PubTaskRef, discon_task := DisconLoopTaskRef, recon_task := ReconLoopTaskRef}) ->
     % Stop all loops
     timer:cancel(PubTaskRef),
@@ -158,26 +164,47 @@ handle_info({?DISCONNECTED_MSG, {TimeNs, Reason}, ClientName}, State) ->
             {noreply, State}
     end;
 
-handle_info({?PUBLISH_RECV_MSG, {RecvTimeNs, Topic, Payload}, ClientName}, State) ->
-    % Extracted needed info and store
-    Bytes = byte_size(Payload),
-    
-    % Try to decode with publisher ID
-    {Seq, PubTimeNs, PublisherID, _Rest} = 
-        case ps_bench_utils:decode_seq_header_with_publisher(Payload) of
-            {S, T, P, R} -> {S, T, P, R};
-            _ -> 
-                % Fallback to old format
-                {S, T, R} = ps_bench_utils:decode_seq_header(Payload),
-                {S, T, unknown, R}
-        end,
-    
-    % Updated call with PublisherID
-    ps_bench_store:record_recv(ClientName, Topic, Seq, PubTimeNs, RecvTimeNs, Bytes, PublisherID),
-    {noreply, State};
+handle_info({?PUBLISH_RECV_MSG, {RecvTimeNs, Topic, Payload, Props}, ClientName},
+            State = #{server_reference := ServerReference}) ->
+    case is_op_request_topic(Topic) of
+        true ->
+            % Broker-forwarded operation request: hand the properties to the
+            % interface so it can emit the operation response.
+            gen_server:cast(ServerReference, {respond_to_op, Props}),
+            {noreply, State};
+        false ->
+            case is_op_system_topic(Topic) of
+                true ->
+                    % Other op-system traffic (e.g. OP_NOTIF status to a requester):
+                    % not benchmark data, do not record.
+                    {noreply, State};
+                false ->
+                    % Normal data publish: record the receive event.
+                    Bytes = byte_size(Payload),
+                    {Seq, PubTimeNs, PublisherID, _Rest} =
+                        case ps_bench_utils:decode_seq_header_with_publisher(Payload) of
+                            {S, T, P, R} -> {S, T, P, R};
+                            _ ->
+                                {S, T, R} = ps_bench_utils:decode_seq_header(Payload),
+                                {S, T, unknown, R}
+                        end,
+                    ps_bench_store:record_recv(ClientName, Topic, Seq, PubTimeNs, RecvTimeNs, Bytes, PublisherID),
+                    {noreply, State}
+            end
+    end;
 
 handle_info(_Info, State) ->
     {noreply, State}.
+
+%% A broker-forwarded operation request arrives on OP_REQ/<client-id>.
+is_op_request_topic(<<"OP_REQ/", _/binary>>) -> true;
+is_op_request_topic(_) -> false.
+
+%% Op-system / control-plane traffic that is not benchmark data.
+is_op_system_topic(<<"OP_REQ/", _/binary>>)   -> true;
+is_op_system_topic(<<"OP_NOTIF/", _/binary>>) -> true;
+is_op_system_topic(<<"$OP", _/binary>>)       -> true;
+is_op_system_topic(_) -> false.
 
 do_subscribe(_Topics, ServerReference, Tid) ->
 
