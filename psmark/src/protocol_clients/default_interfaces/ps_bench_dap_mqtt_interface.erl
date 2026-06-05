@@ -6,6 +6,21 @@
 %% public
 -export([start_link/3]).
 
+%% ===== PLACEHOLDER per-node subscription purpose (DAP-SP) =====
+%% Christian's test-case section will define the real node -> SP mapping. Until
+%% then this stand-in maps the DAP deployment's node names to a subscription
+%% purpose. Nodes not listed fall back to "*" (match-any) so every existing
+%% scenario keeps its previous wildcard behavior. A value may be a single filter
+%% or a '|'-joined multi-filter; the broker delivers when the SP matches ANY one
+%% of the message-purpose filters (see purpose_filter_mp_matches_sp in the broker).
+-define(PLACEHOLDER_NODE_SP, [
+    {runner_qa,          <<"quality/assurance">>},
+    {runner_maintenance, <<"maintenance/predictive|maintenance/routine">>},
+    {runner_regulatory,  <<"regulatory/reporting">>},
+    {runner_ops_finance, <<"operations/forecast">>}
+]).
+-define(DEFAULT_NODE_SP, <<"*">>).
+
 %% gen_server callbacks
 -export([init/1, handle_call/3,
          handle_cast/2, handle_info/2,
@@ -22,7 +37,17 @@ start_link(ScenarioName, ClientName0, OwnerPid) ->
 init({ScenarioName, RegName, OwnerPid}) ->
     ClientIdBin = ps_bench_utils:convert_to_binary(RegName),
     {ok, PurposeMap} = ps_bench_config_manager:fetch_mqtt_device_purposes(),
-    {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, registered_topics => #{}, purpose_map => PurposeMap}}.
+    SubPurpose = resolve_node_sp(),
+    {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, registered_topics => #{}, purpose_map => PurposeMap, sub_purpose => SubPurpose}}.
+
+%% Resolve this node's subscription purpose (DAP-SP) from the placeholder map.
+resolve_node_sp() ->
+    case ps_bench_config_manager:fetch_node_name() of
+        {ok, NodeName} ->
+            proplists:get_value(NodeName, ?PLACEHOLDER_NODE_SP, ?DEFAULT_NODE_SP);
+        _ ->
+            ?DEFAULT_NODE_SP
+    end.
 
 handle_call(connect, _From, State = #{first_start := FirstStart}) ->
     % If not specifically told, we start clean by default, then preserve old sessions on reconnects
@@ -37,8 +62,8 @@ handle_call(reconnect, _From, State) ->
     % By the MQTT standard, this just starts a clean session if none existed previously
     do_connect(true, State);
 
-handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected}) when Connected == true ->
-    DapProperties = Properties#{'User-Property' => [{<<"DAP-SP">>, <<"*">>}]},
+handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected, sub_purpose := SubPurpose}) when Connected == true ->
+    DapProperties = Properties#{'User-Property' => [{<<"DAP-SP">>, SubPurpose}]},
     _ = emqtt:subscribe(ClientPid, DapProperties, Topics),
     {reply, ok, State};
 
