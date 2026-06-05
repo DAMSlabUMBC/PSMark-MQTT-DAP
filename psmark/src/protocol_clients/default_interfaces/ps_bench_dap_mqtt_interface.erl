@@ -21,18 +21,24 @@
 ]).
 -define(DEFAULT_NODE_SP, <<"*">>).
 
-%% ===== PLACEHOLDER dynamic-purpose rotation set =====
-%% Christian's test-case section will define the real rotation set and window.
-%% Both the publisher (rotating its registered MP) and the subscriber (rotating
-%% its DAP-SP) derive the active purpose from this SAME list and the SAME clock
-%% window (ps_bench_utils:rotation_purpose/3), which is what keeps them in
-%% LOCKSTEP. The rotation window (ms) is read from the scenario config
-%% (purpose_rotation_window_ms); 0 disables rotation entirely.
--define(PLACEHOLDER_ROTATION_PURPOSES, [
-    <<"maintenance/predictive">>,
-    <<"maintenance/routine">>,
-    <<"quality/assurance">>
-]).
+%% ===== PLACEHOLDER dynamic-purpose toggle (Christian's spec) =====
+%% Each window ALTERNATES between ADDING and REMOVING a single purpose
+%% (?PLACEHOLDER_ROTATION_TOGGLE) from the active filter, rather than swapping
+%% the whole purpose (set rotation). Both the publisher (toggling its registered
+%% MP) and the subscriber (toggling its DAP-SP) derive the toggle decision from
+%% the SAME clock window (ps_bench_utils:rotation_toggle_filter/4), which keeps
+%% them in LOCKSTEP. The window (ms) is the scenario config
+%% purpose_rotation_window_ms (1000/5000/10000 for Christian's 1/5/10s cells);
+%% 0 disables it. Christian's test section defines the real bases/toggle purpose.
+%%
+%% The publisher MP base and the subscriber SP base are kept DISTINCT and
+%% non-overlapping so the TOGGLED purpose is the only token their filters can
+%% intersect on: when it is present on both (added window) data flows; when it is
+%% removed (next window) delivery via it stops - which is exactly the
+%% consent-withdrawal semantics a purpose toggle is meant to model.
+-define(PLACEHOLDER_ROTATION_TOGGLE, <<"maintenance/routine">>).
+-define(PLACEHOLDER_ROTATION_MP_BASE, [<<"maintenance/predictive">>]).
+-define(PLACEHOLDER_ROTATION_SP_BASE, [<<"quality/assurance">>]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3,
@@ -149,10 +155,10 @@ handle_call(stop, _From, State) ->
 handle_call(_, _, State) ->
     {reply, ok, State}.
 
-%% Dynamic purpose rotation tick (driven by the scenario manager's timer).
-%% A publisher re-registers its MPs with the current scheduled purpose; a
-%% subscriber re-subscribes with the current scheduled SP. Both derive the
-%% purpose from the same clock window, so they stay in lockstep.
+%% Dynamic purpose toggle tick (driven by the scenario manager's timer).
+%% A publisher re-registers its MPs with the current toggled MP filter; a
+%% subscriber re-subscribes with the current toggled SP filter. Both derive the
+%% add/remove decision from the same clock window, so they stay in lockstep.
 handle_cast(rotate_purpose, State = #{rotation_window_ms := W}) when W > 0 ->
     State1 = rotate_subscriptions(State),
     State2 = rotate_registrations(State1),
@@ -250,46 +256,49 @@ rotate_subscriptions(State = #{connected := true, client_pid := ClientPid,
 rotate_subscriptions(State) ->
     State.
 
-%% Re-register all known MPs with the current rotation purpose (publisher
-%% clients only). ensure_mp_registered re-publishes only when the purpose
-%% actually changed, so this is a cheap no-op within a window.
+%% Re-register all known MPs with the current toggled MP filter (publisher
+%% clients only). ensure_mp_registered re-publishes only when the filter actually
+%% changed, so this is a cheap no-op within a window and a real re-registration
+%% at each add/remove boundary.
 rotate_registrations(State = #{connected := true, client_pid := ClientPid,
-                               client_name := ClientIdBin, registered_topics := Regs})
+                               client_name := ClientIdBin, registered_topics := Regs,
+                               rotation_window_ms := W})
   when map_size(Regs) > 0 ->
-    case current_rotation_purpose(State) of
+    case current_rotation_filter(W, ?PLACEHOLDER_ROTATION_MP_BASE) of
         undefined ->
             State;
-        Purpose ->
+        Filter ->
             NewRegs = maps:fold(
                         fun(Topic, _Old, Acc) ->
-                            ensure_mp_registered(ClientPid, ClientIdBin, Topic, Purpose, Acc)
+                            ensure_mp_registered(ClientPid, ClientIdBin, Topic, Filter, Acc)
                         end, Regs, Regs),
             State#{registered_topics := NewRegs}
     end;
 rotate_registrations(State) ->
     State.
 
-%% Active rotation purpose for "now", or undefined when rotation is off.
-current_rotation_purpose(#{rotation_window_ms := W}) when W > 0 ->
+%% Active toggled filter ('|'-joined binary) for "now" over BaseList, or
+%% undefined when rotation is off. The toggle purpose is added/removed by window.
+current_rotation_filter(W, BaseList) when W > 0 ->
     NowMs = erlang:system_time(millisecond),
-    ps_bench_utils:rotation_purpose(NowMs, W, ?PLACEHOLDER_ROTATION_PURPOSES);
-current_rotation_purpose(_State) ->
+    ps_bench_utils:rotation_toggle_filter(NowMs, W, BaseList, ?PLACEHOLDER_ROTATION_TOGGLE);
+current_rotation_filter(_W, _BaseList) ->
     undefined.
 
-%% Effective subscription purpose: the rotation purpose when rotation is on,
-%% otherwise the per-node placeholder SP (Part 2).
-effective_sp(State = #{sub_purpose := SubPurpose}) ->
-    case current_rotation_purpose(State) of
+%% Effective subscription purpose: the toggled SP filter (SP base + toggle) when
+%% rotation is on, otherwise the per-node placeholder SP (Part 2).
+effective_sp(#{rotation_window_ms := W, sub_purpose := SubPurpose}) ->
+    case current_rotation_filter(W, ?PLACEHOLDER_ROTATION_SP_BASE) of
         undefined -> SubPurpose;
-        P -> P
+        F -> F
     end.
 
-%% Effective publish (MP) purpose: the rotation purpose when rotation is on,
-%% otherwise the static per-device purpose.
-effective_pub_purpose(Topic, State = #{purpose_map := PurposeMap}) ->
-    case current_rotation_purpose(State) of
+%% Effective publish (MP) purpose: the toggled MP filter (MP base + toggle) when
+%% rotation is on, otherwise the static per-device purpose.
+effective_pub_purpose(Topic, #{rotation_window_ms := W, purpose_map := PurposeMap}) ->
+    case current_rotation_filter(W, ?PLACEHOLDER_ROTATION_MP_BASE) of
         undefined -> purpose_for_topic(Topic, PurposeMap);
-        P -> P
+        F -> F
     end.
 
 handle_info(Info, State) ->

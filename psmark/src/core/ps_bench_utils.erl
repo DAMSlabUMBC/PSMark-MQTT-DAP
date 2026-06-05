@@ -13,6 +13,7 @@
 
 -export([decompose_purpose_filter/1]).
 -export([rotation_index/2, rotation_purpose/3]).
+-export([rotation_toggle_added/2, rotation_toggle_filter/4]).
 
 % TODO, Fix RNG seeding
 initialize_rng_seed() ->
@@ -208,6 +209,30 @@ rotation_purpose(NowMs, WindowMs, PurposeList) when is_list(PurposeList) ->
     N = length(PurposeList),
     Index = rotation_index(NowMs, WindowMs) rem N,
     lists:nth(Index + 1, PurposeList).
+
+%% Add/remove toggle schedule (Christian's spec): on each window a single purpose
+%% is alternately ADDED to and REMOVED from a base filter, rather than the whole
+%% purpose being swapped (set rotation). Even windows include the toggle purpose
+%% ("added"), odd windows omit it ("removed"). Because the decision is a pure
+%% function of the same clock window, a publisher (toggling its MP) and a
+%% subscriber (toggling its SP) that read the same WindowMs stay in LOCKSTEP:
+%% they agree, window for window, on whether the toggle purpose is present.
+rotation_toggle_added(NowMs, WindowMs) ->
+    rotation_index(NowMs, WindowMs) rem 2 =:= 0.
+
+%% Build the active '|'-joined filter for "now": BaseList every window, plus the
+%% TogglePurpose only on "added" windows. Returns a binary suitable as a DAP-SP
+%% or as the purpose half of a DAP-MP "<filter>:<topic>" registration.
+rotation_toggle_filter(NowMs, WindowMs, BaseList, TogglePurpose) ->
+    Tokens = case rotation_toggle_added(NowMs, WindowMs) of
+                 true  -> BaseList ++ [TogglePurpose];
+                 false -> BaseList
+             end,
+    join_purpose_tokens(Tokens).
+
+join_purpose_tokens([]) -> <<>>;
+join_purpose_tokens([First | Rest]) ->
+    lists:foldl(fun(B, Acc) -> <<Acc/binary, "|", B/binary>> end, First, Rest).
 
 decompose_single_filter(Filter) ->
     Levels = string:tokens(Filter,"/"),

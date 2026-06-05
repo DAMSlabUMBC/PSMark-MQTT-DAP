@@ -1,16 +1,19 @@
-%% Part 3 integration proof (production timer path): the scenario_manager
-%% rotation timer drives lockstep rotation through the FULL stack.
+%% Dynamic-purpose toggle proof (production timer path): the scenario_manager
+%% rotation timer drives the lockstep add/remove toggle through the FULL stack.
 %%
 %% Runs the real scenario_manager lifecycle for a single publisher node (which
-%% also self-subscribes) with rotation enabled. The publisher device loop
-%% rotates its MP on its own; the subscription client has NO publish loop, so it
-%% can only rotate its SP when the scenario_manager timer casts rotate_purpose
-%% to it (scenario_manager -> adapter -> interface). If that timer path were
-%% broken, the subscriber would stick on its first-window SP and self-delivery
-%% would drop to zero after the first window.
+%% also self-subscribes) with the toggle enabled. The publisher device loop
+%% re-registers its toggled MP on its own; the subscription client has NO publish
+%% loop, so it can only re-toggle its SP when the scenario_manager timer casts
+%% rotate_purpose to it (scenario_manager -> adapter -> interface). The MP base
+%% and SP base are distinct, so self-delivery happens only when the toggle
+%% purpose is present on BOTH sides - i.e. in "added" windows, and only if the
+%% timer keeps the subscriber's SP in lockstep. If that timer path were broken,
+%% the subscriber would freeze on its first-window SP and self-delivery would
+%% drop to zero.
 %%
-%% Proves: self-delivery is sustained across >= 3 rotation windows, i.e. the
-%% production timer actually fires and rotates both sides in lockstep.
+%% Proves: self-delivery recurs across >= 3 distinct (added) rotation windows,
+%% i.e. the production timer actually fires and toggles both sides in lockstep.
 %%
 %% Run (broker must be up on BROKER_PORT, DAP build):
 %%   erlc -I include -o integration_tests integration_tests/ps_bench_rotation_timer_itest.erl
@@ -109,7 +112,7 @@ setup_config_files() ->
 
     Scenario =
         "[{name, rot_tscn},\n"
-        " {duration, {7, seconds}},\n"
+        " {duration, {15, seconds}},\n"
         " {protocol, mqttv5},\n"
         " {deployment_name, rot_tdep},\n"
         " {hosts, [{rot_tnode, [{hostname, \"127.0.0.1\"}]}]},\n"

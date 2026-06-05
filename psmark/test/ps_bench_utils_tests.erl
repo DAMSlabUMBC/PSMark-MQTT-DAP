@@ -58,3 +58,50 @@ rotation_offset_breaks_lockstep_test() ->
 
 rotation_empty_set_is_off_test() ->
     ?assertEqual(undefined, ps_bench_utils:rotation_purpose(1234, 1000, [])).
+
+%% --- Dynamic purpose add/remove toggle (Christian's spec) ---
+%% Even windows ADD the toggle purpose, odd windows REMOVE it; stable within a
+%% window, flips only at window boundaries.
+toggle_alternates_each_window_test() ->
+    W = 1000,
+    ?assertEqual(true,  ps_bench_utils:rotation_toggle_added(0,    W)),
+    ?assertEqual(true,  ps_bench_utils:rotation_toggle_added(999,  W)),
+    ?assertEqual(false, ps_bench_utils:rotation_toggle_added(1000, W)),
+    ?assertEqual(false, ps_bench_utils:rotation_toggle_added(1999, W)),
+    ?assertEqual(true,  ps_bench_utils:rotation_toggle_added(2000, W)).
+
+%% The built filter carries the base every window and ADDS the toggle purpose
+%% only on added windows (removes it on removed windows).
+toggle_filter_adds_and_removes_test() ->
+    W = 1000,
+    Base = [<<"a/b">>],
+    Toggle = <<"c/d">>,
+    %% added window 0 -> base + toggle
+    ?assertEqual(<<"a/b|c/d">>, ps_bench_utils:rotation_toggle_filter(0, W, Base, Toggle)),
+    %% removed window 1 -> base only
+    ?assertEqual(<<"a/b">>,     ps_bench_utils:rotation_toggle_filter(1000, W, Base, Toggle)),
+    %% added again window 2
+    ?assertEqual(<<"a/b|c/d">>, ps_bench_utils:rotation_toggle_filter(2000, W, Base, Toggle)).
+
+%% LOCKSTEP: a publisher and subscriber that read the same window agree, window
+%% for window, on whether the toggle purpose is present - even with DISTINCT
+%% bases, the toggle token is added/removed in unison.
+toggle_lockstep_same_window_test() ->
+    W = 5000,
+    Toggle = <<"shared">>,
+    MpBase = [<<"mp/base">>],
+    SpBase = [<<"sp/base">>],
+    Now = 12345,
+    PubAdded = ps_bench_utils:rotation_toggle_added(Now, W),
+    SubAdded = ps_bench_utils:rotation_toggle_added(Now, W),
+    ?assertEqual(PubAdded, SubAdded),
+    MpHasToggle = binary:match(ps_bench_utils:rotation_toggle_filter(Now, W, MpBase, Toggle), Toggle) =/= nomatch,
+    SpHasToggle = binary:match(ps_bench_utils:rotation_toggle_filter(Now, W, SpBase, Toggle), Toggle) =/= nomatch,
+    ?assertEqual(MpHasToggle, SpHasToggle).
+
+%% Out of phase by one window: the two callers DISAGREE on the toggle - exactly
+%% the desync the integration test catches as a delivery drop.
+toggle_offset_breaks_lockstep_test() ->
+    W = 1000,
+    ?assertNotEqual(ps_bench_utils:rotation_toggle_added(0, W),
+                    ps_bench_utils:rotation_toggle_added(1000, W)).
