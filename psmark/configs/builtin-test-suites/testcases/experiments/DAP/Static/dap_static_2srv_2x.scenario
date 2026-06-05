@@ -2,11 +2,17 @@
     {name, dap_static_2srv_2x},
     {duration, {3, minutes}},
     {protocol, mqttv5},
-    {deployment_name, smart_factory_2x_2_node},
+    {deployment_name, floor_80x2},
     {hosts,
     [
-        {runner1, [{hostname, "127.0.0.1"}]},
-        {runner2, [{hostname, "127.0.0.1"}]}
+        {floor1,                     [{hostname, "127.0.0.1"}]},
+        {floor2,                     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_predictive, [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_routine,    [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,     [{hostname, "127.0.0.1"}]}
     ]},
 
     {protocol_config,
@@ -30,6 +36,16 @@
             {robot_imu,                  ["vendor/maintenance"]},
             {robot_lidar,                ["vendor/maintenance"]},
             {robot_odometry,             ["vendor/maintenance"]}
+        ]},
+        %% One subscriber per purpose (paper SS2.2 / SS7.3).
+        {node_subscription_purposes,
+        [
+            {sub_quality_assurance,      "quality/assurance"},
+            {sub_maintenance_predictive, "maintenance/predictive"},
+            {sub_maintenance_routine,    "maintenance/routine"},
+            {sub_operations_forecast,    "operations/forecast"},
+            {sub_regulatory_reporting,   "regulatory/reporting"},
+            {sub_vendor_maintenance,     "vendor/maintenance"}
         ]}
     ]},
 

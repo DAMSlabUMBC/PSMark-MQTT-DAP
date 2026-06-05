@@ -6,39 +6,31 @@
 %% public
 -export([start_link/3]).
 
-%% ===== PLACEHOLDER per-node subscription purpose (DAP-SP) =====
-%% Christian's test-case section will define the real node -> SP mapping. Until
-%% then this stand-in maps the DAP deployment's node names to a subscription
-%% purpose. Nodes not listed fall back to "*" (match-any) so every existing
-%% scenario keeps its previous wildcard behavior. A value may be a single filter
-%% or a '|'-joined multi-filter; the broker delivers when the SP matches ANY one
-%% of the message-purpose filters (see purpose_filter_mp_matches_sp in the broker).
--define(PLACEHOLDER_NODE_SP, [
-    {runner_qa,          <<"quality/assurance">>},
-    {runner_maintenance, <<"maintenance/predictive|maintenance/routine">>},
-    {runner_regulatory,  <<"regulatory/reporting">>},
-    {runner_ops_finance, <<"operations/forecast">>}
-]).
+%% ===== Per-node subscription purpose (DAP-SP) =====
+%% The real node -> SP mapping lives in each scenario's protocol_config under
+%% node_subscription_purposes (paper SS2.2 consumer grouping; see the
+%% experiments/DAP/Smoke scenarios). A value may be a single filter or a
+%% '|'-joined multi-filter; the broker delivers when the SP matches ANY one of
+%% the message-purpose filters (see purpose_filter_mp_matches_sp in the broker).
+%% Nodes not listed fall back to "*" (match-any) so every existing scenario
+%% keeps its previous wildcard behavior.
 -define(DEFAULT_NODE_SP, <<"*">>).
 
-%% ===== PLACEHOLDER dynamic-purpose toggle (Christian's spec) =====
-%% Each window ALTERNATES between ADDING and REMOVING a single purpose
-%% (?PLACEHOLDER_ROTATION_TOGGLE) from the active filter, rather than swapping
-%% the whole purpose (set rotation). Both the publisher (toggling its registered
-%% MP) and the subscriber (toggling its DAP-SP) derive the toggle decision from
-%% the SAME clock window (ps_bench_utils:rotation_toggle_filter/4), which keeps
-%% them in LOCKSTEP. The window (ms) is the scenario config
-%% purpose_rotation_window_ms (1000/5000/10000 for Christian's 1/5/10s cells);
-%% 0 disables it. Christian's test section defines the real bases/toggle purpose.
+%% ===== Dynamic-purpose add/remove toggle (paper SS7.3) =====
+%% Each window ALTERNATES between ADDING and REMOVING a single purpose - the
+%% scenario's rotation_toggle_purpose - on top of each client's REAL filter:
+%% a publisher toggles it on the MP derived from its device_purposes entry, a
+%% subscriber-role node on its node_subscription_purposes DAP-SP. Both derive
+%% the add/remove decision from the SAME clock window
+%% (ps_bench_utils:rotation_toggle_filter/4), which keeps them in LOCKSTEP.
+%% The window (ms) is the scenario config purpose_rotation_window_ms
+%% (10000/5000/1000 for the paper's 10/5/1 s cells); 0 disables it.
 %%
-%% The publisher MP base and the subscriber SP base are kept DISTINCT and
-%% non-overlapping so the TOGGLED purpose is the only token their filters can
-%% intersect on: when it is present on both (added window) data flows; when it is
-%% removed (next window) delivery via it stops - which is exactly the
-%% consent-withdrawal semantics a purpose toggle is meant to model.
--define(PLACEHOLDER_ROTATION_TOGGLE, <<"maintenance/routine">>).
--define(PLACEHOLDER_ROTATION_MP_BASE, [<<"maintenance/predictive">>]).
--define(PLACEHOLDER_ROTATION_SP_BASE, [<<"quality/assurance">>]).
+%% When the toggle purpose is part of a client's base filter (e.g. toggling
+%% maintenance/routine on the Maintenance consumer), "removed" windows strip it
+%% - real consent-withdrawal semantics; "added" windows restore it. Publisher
+%% nodes' legacy subscription clients (not in the SP map) never toggle their SP,
+%% so their match-any/default behavior is preserved.
 
 %% gen_server callbacks
 -export([init/1, handle_call/3,
@@ -57,6 +49,8 @@ init({ScenarioName, RegName, OwnerPid}) ->
     ClientIdBin = ps_bench_utils:convert_to_binary(RegName),
     {ok, PurposeMap} = ps_bench_config_manager:fetch_mqtt_device_purposes(),
     {ok, RotationWindowMs} = ps_bench_config_manager:fetch_mqtt_purpose_rotation_window_ms(),
+    {ok, TogglePurpose} = ps_bench_config_manager:fetch_mqtt_rotation_toggle_purpose(),
+    {ok, NodeRole} = ps_bench_config_manager:fetch_role_for_this_node(),
     SubPurpose = resolve_node_sp(),
     {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName,
            client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true,
@@ -64,15 +58,22 @@ init({ScenarioName, RegName, OwnerPid}) ->
            %% rotation that changes the purpose forces a fresh MP registration.
            registered_topics => #{}, purpose_map => PurposeMap,
            sub_purpose => SubPurpose,
+           node_role => NodeRole,
            rotation_window_ms => RotationWindowMs,
+           rotation_toggle => TogglePurpose,
            sub_topics => [],          %% topics this client is subscribed to (for re-subscribe)
            applied_sp => undefined}}. %% last DAP-SP actually sent (avoids redundant re-subscribe)
 
-%% Resolve this node's subscription purpose (DAP-SP) from the placeholder map.
+%% Resolve this node's subscription purpose (DAP-SP) from the scenario's
+%% node_subscription_purposes map; unmapped nodes get match-any.
 resolve_node_sp() ->
+    {ok, NodeSPs} = ps_bench_config_manager:fetch_mqtt_node_subscription_purposes(),
     case ps_bench_config_manager:fetch_node_name() of
         {ok, NodeName} ->
-            proplists:get_value(NodeName, ?PLACEHOLDER_NODE_SP, ?DEFAULT_NODE_SP);
+            case proplists:get_value(NodeName, NodeSPs) of
+                undefined -> ?DEFAULT_NODE_SP;
+                SP -> ps_bench_utils:convert_to_binary(SP)
+            end;
         _ ->
             ?DEFAULT_NODE_SP
     end.
@@ -259,47 +260,59 @@ rotate_subscriptions(State) ->
 %% Re-register all known MPs with the current toggled MP filter (publisher
 %% clients only). ensure_mp_registered re-publishes only when the filter actually
 %% changed, so this is a cheap no-op within a window and a real re-registration
-%% at each add/remove boundary.
+%% at each add/remove boundary. Each topic toggles over its OWN device-purpose
+%% base, so multi-purpose devices keep their other purposes throughout.
 rotate_registrations(State = #{connected := true, client_pid := ClientPid,
-                               client_name := ClientIdBin, registered_topics := Regs,
-                               rotation_window_ms := W})
+                               client_name := ClientIdBin, registered_topics := Regs})
   when map_size(Regs) > 0 ->
-    case current_rotation_filter(W, ?PLACEHOLDER_ROTATION_MP_BASE) of
-        undefined ->
-            State;
-        Filter ->
-            NewRegs = maps:fold(
-                        fun(Topic, _Old, Acc) ->
-                            ensure_mp_registered(ClientPid, ClientIdBin, Topic, Filter, Acc)
-                        end, Regs, Regs),
-            State#{registered_topics := NewRegs}
-    end;
+    NewRegs = maps:fold(
+                fun(Topic, _Old, Acc) ->
+                    Filter = effective_pub_purpose(Topic, State),
+                    ensure_mp_registered(ClientPid, ClientIdBin, Topic, Filter, Acc)
+                end, Regs, Regs),
+    State#{registered_topics := NewRegs};
 rotate_registrations(State) ->
     State.
 
-%% Active toggled filter ('|'-joined binary) for "now" over BaseList, or
-%% undefined when rotation is off. The toggle purpose is added/removed by window.
-current_rotation_filter(W, BaseList) when W > 0 ->
+%% Active toggled filter ('|'-joined binary) for "now" over BaseTokens, or
+%% undefined when rotation is off (window 0 or no toggle purpose configured).
+%% The toggle purpose is stripped from the base first so "removed" windows
+%% genuinely remove it when the base already contains it (consent withdrawal),
+%% and "added" windows carry base + toggle.
+current_rotation_filter(W, Toggle, BaseTokens) when W > 0, is_binary(Toggle) ->
     NowMs = erlang:system_time(millisecond),
-    ps_bench_utils:rotation_toggle_filter(NowMs, W, BaseList, ?PLACEHOLDER_ROTATION_TOGGLE);
-current_rotation_filter(_W, _BaseList) ->
+    ps_bench_utils:rotation_toggle_filter(NowMs, W, BaseTokens -- [Toggle], Toggle);
+current_rotation_filter(_W, _Toggle, _BaseTokens) ->
     undefined.
 
-%% Effective subscription purpose: the toggled SP filter (SP base + toggle) when
-%% rotation is on, otherwise the per-node placeholder SP (Part 2).
-effective_sp(#{rotation_window_ms := W, sub_purpose := SubPurpose}) ->
-    case current_rotation_filter(W, ?PLACEHOLDER_ROTATION_SP_BASE) of
+%% Effective subscription purpose: subscriber-role nodes toggle over their real
+%% per-node SP when rotation is on; everyone else (and rotation-off runs) keeps
+%% the static per-node SP. Publisher nodes' legacy subscription clients are
+%% excluded so a toggled window can never widen their match-any SP.
+effective_sp(#{node_role := subscriber, rotation_window_ms := W,
+               rotation_toggle := Toggle, sub_purpose := SubPurpose}) ->
+    case current_rotation_filter(W, Toggle, filter_tokens(SubPurpose)) of
         undefined -> SubPurpose;
+        F -> F
+    end;
+effective_sp(#{sub_purpose := SubPurpose}) ->
+    SubPurpose.
+
+%% Effective publish (MP) purpose: the device's real purpose tokens, toggled
+%% when rotation is on, statically '|'-joined otherwise.
+effective_pub_purpose(Topic, #{rotation_window_ms := W, rotation_toggle := Toggle,
+                               purpose_map := PurposeMap}) ->
+    BaseTokens = mp_tokens_for_topic(Topic, PurposeMap),
+    case current_rotation_filter(W, Toggle, BaseTokens) of
+        undefined -> join_binaries(BaseTokens, <<"|">>, ?DAP_ALLOW_ALL_FILTER);
         F -> F
     end.
 
-%% Effective publish (MP) purpose: the toggled MP filter (MP base + toggle) when
-%% rotation is on, otherwise the static per-device purpose.
-effective_pub_purpose(Topic, #{rotation_window_ms := W, purpose_map := PurposeMap}) ->
-    case current_rotation_filter(W, ?PLACEHOLDER_ROTATION_MP_BASE) of
-        undefined -> purpose_for_topic(Topic, PurposeMap);
-        F -> F
-    end.
+%% Plain '|'-token list (binaries) for a filter binary: '|' split plus {a,b}
+%% brace expansion via decompose_purpose_filter. "*" passes through as ["*"].
+filter_tokens(FilterBin) when is_binary(FilterBin) ->
+    [list_to_binary(T)
+     || T <- ps_bench_utils:decompose_purpose_filter(binary_to_list(FilterBin))].
 
 handle_info(Info, State) ->
 
@@ -431,20 +444,41 @@ ensure_mp_registered(ClientPid, ClientIdBin, Topic, PurposeBin, Regs) ->
             Regs#{Topic => PurposeBin}
     end.
 
-%% Derive the publisher purpose from the device-type suffix of the topic.
+%% Derive the publisher MP token list from the device-type suffix of the topic.
 %% Topics produced by PSMark follow the form ps_bench/device/qos_<N>/<device_type>.
+%% Each device_purposes entry may be a single purpose or a list of purposes, and
+%% each purpose may carry '|' multi-filters or {a,b} braces - the broker stores
+%% MPs RAW (no brace expansion on $MP_REG), so braces MUST be expanded here.
 %% A missing or empty map falls back to the wildcard purpose so pre-existing
 %% scenarios keep working without a device_purposes block.
-purpose_for_topic(Topic, PurposeMap) ->
+mp_tokens_for_topic(Topic, PurposeMap) ->
     case binary:split(Topic, <<"/">>, [global]) of
         [_, _, _, DeviceTypeBin] when PurposeMap =/= [] ->
             DeviceType = binary_to_atom(DeviceTypeBin, utf8),
             case proplists:get_value(DeviceType, PurposeMap) of
-                undefined -> <<"*">>;
-                P when is_list(P) -> list_to_binary(P);
-                P when is_binary(P) -> P;
-                P when is_atom(P) -> atom_to_binary(P, utf8)
+                undefined -> [?DAP_ALLOW_ALL_FILTER];
+                Entry -> purpose_entry_tokens(Entry)
             end;
         _ ->
-            <<"*">>
+            [?DAP_ALLOW_ALL_FILTER]
     end.
+
+%% Normalize a device_purposes entry to a deduped, order-preserving token list.
+%% Entry shapes: "purpose" (charlist), <<"purpose">>, an atom, or a LIST of
+%% those (multi-purpose device). A bare charlist is told apart from a list of
+%% purposes by its integer head.
+purpose_entry_tokens(Entry) when is_binary(Entry) ->
+    dedupe_tokens(filter_tokens(Entry));
+purpose_entry_tokens(Entry) when is_atom(Entry) ->
+    purpose_entry_tokens(atom_to_binary(Entry, utf8));
+purpose_entry_tokens([C | _] = Entry) when is_integer(C) ->
+    purpose_entry_tokens(list_to_binary(Entry));
+purpose_entry_tokens(Entries) when is_list(Entries), Entries =/= [] ->
+    dedupe_tokens(lists:append(
+        [filter_tokens(ps_bench_utils:convert_to_binary(E)) || E <- Entries]));
+purpose_entry_tokens(_) ->
+    [?DAP_ALLOW_ALL_FILTER].
+
+%% Order-preserving dedupe (keeps the first occurrence of each token).
+dedupe_tokens([]) -> [];
+dedupe_tokens([T | Rest]) -> [T | dedupe_tokens([X || X <- Rest, X =/= T])].

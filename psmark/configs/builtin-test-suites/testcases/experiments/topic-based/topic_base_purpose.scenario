@@ -2,10 +2,16 @@
     {name, baseline_topic_purposes},
     {duration, {3, minutes}},
     {protocol, mqttv5},
-    {deployment_name, smart_factory_1_node},
+    {deployment_name, floor_40x1},
     {hosts,
     [
-        {runner1, [{hostname, "127.0.0.1"}]}
+        {floor1,                     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_predictive, [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_routine,    [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,     [{hostname, "127.0.0.1"}]}
     ]},
 
     {protocol_config,
@@ -29,6 +35,19 @@
             {robot_imu,                  ["vendor/maintenance"]},
             {robot_lidar,                ["vendor/maintenance"]},
             {robot_odometry,             ["vendor/maintenance"]}
+        ]},
+        %% One consumer per purpose, mirroring the DAP cells (paper SS2.2 /
+        %% SS7.3). Each listed node subscribes ONLY to its purpose's encoded
+        %% topics ps_bench/device/qos_<N>/+/[<purpose>] instead of the legacy
+        %% everything-wildcard, so received volumes are comparable to DAP.
+        {node_subscription_purposes,
+        [
+            {sub_quality_assurance,      "quality/assurance"},
+            {sub_maintenance_predictive, "maintenance/predictive"},
+            {sub_maintenance_routine,    "maintenance/routine"},
+            {sub_operations_forecast,    "operations/forecast"},
+            {sub_regulatory_reporting,   "regulatory/reporting"},
+            {sub_vendor_maintenance,     "vendor/maintenance"}
         ]}
     ]},
 

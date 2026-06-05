@@ -1,6 +1,7 @@
-% Floors x devices topology cell: 80 devices x 2 floors.
-% A floor = an edge server = a node. Each floor node runs 80 publisher devices;
-% a single subscriber-only node (role subscriber) consumes across both floors.
+% Matrix cell topology: 80 devices x 2 floors (paper SS7.3 scalings).
+% Doubled smart-factory device mix on EACH of two floor nodes (matches the
+% smart_factory_2x_2_node convention); six subscriber-only consumer nodes, one
+% per purpose, consume across floors (DAP-SP wired per scenario).
 [
     {name, floor_80x2},
     {nodes,
@@ -9,20 +10,39 @@
         [
             {devices,
             [
-                {floor_sensor, 80}
+                {machine_temperature_sensor, 12},
+                {machine_speed_sensor, 12},
+                {machine_energy_consumption, 12},
+                {production_quality_sensor, 12},
+                {vibration_sensor, 12},
+                {robot_farmap, 4},
+                {robot_nearmap, 4},
+                {robot_imu, 4},
+                {robot_lidar, 4},
+                {robot_odometry, 4}
             ]}
         ]},
         {floor2,
         [
             {devices,
             [
-                {floor_sensor, 80}
+                {machine_temperature_sensor, 12},
+                {machine_speed_sensor, 12},
+                {machine_energy_consumption, 12},
+                {production_quality_sensor, 12},
+                {vibration_sensor, 12},
+                {robot_farmap, 4},
+                {robot_nearmap, 4},
+                {robot_imu, 4},
+                {robot_lidar, 4},
+                {robot_odometry, 4}
             ]}
         ]},
-        {aggregator,
-        [
-            {role, subscriber},
-            {devices, []}
-        ]}
+        {sub_quality_assurance,     [{role, subscriber}, {devices, []}]},
+        {sub_maintenance_predictive,[{role, subscriber}, {devices, []}]},
+        {sub_maintenance_routine,   [{role, subscriber}, {devices, []}]},
+        {sub_operations_forecast,   [{role, subscriber}, {devices, []}]},
+        {sub_regulatory_reporting,  [{role, subscriber}, {devices, []}]},
+        {sub_vendor_maintenance,    [{role, subscriber}, {devices, []}]}
     ]}
 ].

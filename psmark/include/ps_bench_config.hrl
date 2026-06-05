@@ -70,6 +70,16 @@
 % Dynamic purpose rotation: window each rotation purpose stays active (ms).
 % 0 (default) disables rotation, leaving all existing scenarios unaffected.
 -define(MQTT_PURPOSE_ROTATION_WINDOW_PROP, purpose_rotation_window_ms).
+% Dynamic toggle purpose: the single purpose alternately ADDED to and REMOVED
+% from each client's real filter every rotation window (paper SS7.3 dynamic-
+% purposes pattern). Publishers toggle it on their registered MP, subscriber
+% nodes on their DAP-SP, in lockstep. Unset (default) = no toggle.
+-define(MQTT_ROTATION_TOGGLE_PROP, rotation_toggle_purpose).
+% Per-node subscriber purpose (DAP-SP): proplist NodeName -> SP string. A value
+% may be a single purpose or a '|'-joined multi-filter (paper SS2.2 consumer
+% grouping). Nodes not listed fall back to "*" (match-any), preserving the
+% legacy everything-subscriber behavior of all existing scenarios.
+-define(MQTT_NODE_SP_PROP, node_subscription_purposes).
 % NOTE: We do not require a client interface module as we fall back to a default one
 % NOTE: We do not require a default MQTT QoS as we fall back to 0
 -define(MQTT_REQ_KEY_LIST, [?MQTT_BROKER_IP_PROP, ?MQTT_BROKER_PORT_PROP]).
@@ -140,8 +150,10 @@
 -define(DAP_KEY_REASON, <<"DAP-Reason">>).
 -define(DAP_ALLOW_ALL_FILTER, <<"*">>).      % MOSQ_DAP_ALLOW_ALL_FILTER
 
-% ===== PLACEHOLDER operation issuance (Christian's test section defines real values) =====
+% ===== Operation issuance (paper SS7.3 operation cases) =====
 % op_issue_interval_ms: 0 (default) disables publisher op issuance entirely.
+% The paper's operation cells use 1000 (cases i/ii: every 1 s) and the
+% full-dynamism cells reuse the rotation interval.
 -define(MQTT_OP_ISSUE_INTERVAL_PROP, op_issue_interval_ms).
 
 % Operation ISSUER MODE selects WHO issues operations each interval. Both modes
@@ -154,15 +166,14 @@
 -define(OP_ISSUER_MODE_ALL, all_publishers).
 -define(OP_ISSUER_MODE_SINGLE, single_random).
 
-% Operation GROUP selects WHICH operations are issued. Christian's matrix tests
-% the queue-free group (AUDIT/HISTORY/UPDATE) separately from the queue-
-% interacting group (DELETE/RESTRICT). The op-type lists are placeholders his
-% test section may refine.
+% Operation GROUP selects WHICH operations are issued. The paper's matrix tests
+% the queue-free group (cases i/iii: AUDIT/HISTORY/UPDATE) separately from the
+% queue-interacting group (cases ii/iv: DELETE/RESTRICT).
 -define(MQTT_OP_GROUP_PROP, op_group).
 -define(OP_GROUP_NO_QUEUE, no_queue).            % AUDIT/HISTORY/UPDATE, no queue interaction
 -define(OP_GROUP_QUEUE, queue).                  % DELETE/RESTRICT, queue interaction
--define(PLACEHOLDER_OP_GROUP_NO_QUEUE, [<<"AUDIT">>, <<"HISTORY">>, <<"UPDATE">>]).
--define(PLACEHOLDER_OP_GROUP_QUEUE, [<<"DELETE">>, <<"RESTRICT">>]).
+-define(OP_GROUP_NO_QUEUE_TYPES, [<<"AUDIT">>, <<"HISTORY">>, <<"UPDATE">>]).
+-define(OP_GROUP_QUEUE_TYPES, [<<"DELETE">>, <<"RESTRICT">>]).
 
 % Records for metric storage
 -define(PUB_AGG_RECORD_NAME, pub_aggregate).

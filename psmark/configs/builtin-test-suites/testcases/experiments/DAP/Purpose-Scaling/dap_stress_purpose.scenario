@@ -1,11 +1,25 @@
+% Purpose-scaling STRESS cell: 100x purpose density (10 x 10 variant suffix).
+% TARGET density per Christian; if PSMark/the broker cannot handle it (crash,
+% OOM, mass disconnect), fall back by switching the runner's STRESS_CELL
+% constant to dap_stress_purpose_20x or dap_stress_purpose_10x (same file with
+% smaller suffixes) - do not edit the suffixes here in 22 places.
+% RISK: each subscriber SP below brace-expands to EXACTLY 100 filters, which is
+% exactly the broker's MOSQ_DAP_MAX_FILTERS_PER_SUB (=100); a 101st filter
+% triggers a protocol-error DISCONNECT. Zero headroom - see pre-flight notes.
 [
-    {name, dap_triple_purpose},
+    {name, dap_stress_purpose},
     {duration, {3, minutes}},
     {protocol, mqttv5},
-    {deployment_name, smart_factory_1_node},
+    {deployment_name, floor_40x1},
     {hosts,
     [
-        {runner1, [{hostname, "127.0.0.1"}]}
+        {floor1,                     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_predictive, [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_routine,    [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,     [{hostname, "127.0.0.1"}]}
     ]},
 
     {protocol_config,
@@ -29,6 +43,17 @@
             {robot_imu,                  ["vendor/maintenance/{1,2,3,4,5,6,7,8,9,10}/{1,2,3,4,5,6,7,8,9,10}"]},
             {robot_lidar,                ["vendor/maintenance/{1,2,3,4,5,6,7,8,9,10}/{1,2,3,4,5,6,7,8,9,10}"]},
             {robot_odometry,             ["vendor/maintenance/{1,2,3,4,5,6,7,8,9,10}/{1,2,3,4,5,6,7,8,9,10}"]}
+        ]},
+        %% One subscriber per purpose; brace suffix mirrors the MP variants
+        %% (100 filters per SP - AT the broker's per-subscription limit).
+        {node_subscription_purposes,
+        [
+            {sub_quality_assurance,      "quality/assurance/{1,2,3,4,5,6,7,8,9,10}/{1,2,3,4,5,6,7,8,9,10}"},
+            {sub_maintenance_predictive, "maintenance/predictive/{1,2,3,4,5,6,7,8,9,10}/{1,2,3,4,5,6,7,8,9,10}"},
+            {sub_maintenance_routine,    "maintenance/routine/{1,2,3,4,5,6,7,8,9,10}/{1,2,3,4,5,6,7,8,9,10}"},
+            {sub_operations_forecast,    "operations/forecast/{1,2,3,4,5,6,7,8,9,10}/{1,2,3,4,5,6,7,8,9,10}"},
+            {sub_regulatory_reporting,   "regulatory/reporting/{1,2,3,4,5,6,7,8,9,10}/{1,2,3,4,5,6,7,8,9,10}"},
+            {sub_vendor_maintenance,     "vendor/maintenance/{1,2,3,4,5,6,7,8,9,10}/{1,2,3,4,5,6,7,8,9,10}"}
         ]}
     ]},
 

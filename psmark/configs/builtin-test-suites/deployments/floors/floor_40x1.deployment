@@ -1,6 +1,8 @@
-% Floors x devices topology cell: 40 devices x 1 floor.
-% A floor = an edge server = a node. Each floor node runs the publisher devices;
-% a single subscriber-only node (role subscriber) consumes across floors.
+% Matrix cell topology: 40 devices x 1 floor (paper SS7.3 scalings).
+% A floor = an edge server = a publisher node carrying the real smart-factory
+% device mix (paper SS2.2). Consumers are SIX subscriber-only nodes, one per
+% purpose ("one subscriber per purpose for comparable volumes"); each node's
+% DAP-SP is wired in the scenario's node_subscription_purposes.
 [
     {name, floor_40x1},
     {nodes,
@@ -9,13 +11,23 @@
         [
             {devices,
             [
-                {floor_sensor, 40}
+                {machine_temperature_sensor, 6},
+                {machine_speed_sensor, 6},
+                {machine_energy_consumption, 6},
+                {production_quality_sensor, 6},
+                {vibration_sensor, 6},
+                {robot_farmap, 2},
+                {robot_nearmap, 2},
+                {robot_imu, 2},
+                {robot_lidar, 2},
+                {robot_odometry, 2}
             ]}
         ]},
-        {aggregator,
-        [
-            {role, subscriber},
-            {devices, []}
-        ]}
+        {sub_quality_assurance,     [{role, subscriber}, {devices, []}]},
+        {sub_maintenance_predictive,[{role, subscriber}, {devices, []}]},
+        {sub_maintenance_routine,   [{role, subscriber}, {devices, []}]},
+        {sub_operations_forecast,   [{role, subscriber}, {devices, []}]},
+        {sub_regulatory_reporting,  [{role, subscriber}, {devices, []}]},
+        {sub_vendor_maintenance,    [{role, subscriber}, {devices, []}]}
     ]}
 ].

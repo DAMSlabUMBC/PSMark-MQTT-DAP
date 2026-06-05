@@ -6,6 +6,9 @@
 %% public
 -export([start_link/3]).
 
+%% exported for eunit
+-export([purpose_scoped_filters/2]).
+
 %% gen_server callbacks
 -export([init/1, handle_call/3,
          handle_cast/2, handle_info/2,
@@ -24,7 +27,25 @@ init({ScenarioName, RegName, OwnerPid}) ->
     {ok, PurposeMap} = ps_bench_config_manager:fetch_mqtt_device_purposes(),
     {ok, VariantCount} = ps_bench_config_manager:fetch_mqtt_purpose_variant_count(),
     {ok, FanoutModel} = ps_bench_config_manager:fetch_mqtt_purpose_fanout_model(),
-    {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, purpose_map => PurposeMap, variant_count => VariantCount, fanout_model => FanoutModel}}.
+    {ok, NodePurpose} = resolve_node_purpose(),
+    {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, purpose_map => PurposeMap, variant_count => VariantCount, fanout_model => FanoutModel, node_purpose => NodePurpose}}.
+
+%% Per-node consumer purpose for the topic-encoded baseline (paper SS2.2 /
+%% SS7.3: one subscriber per purpose, mirroring the DAP cells). Reuses the
+%% scenario's node_subscription_purposes map. Nodes not listed (publisher
+%% nodes, and every node in pre-existing scenarios without the key) keep the
+%% legacy subscribe-to-everything behavior.
+resolve_node_purpose() ->
+    {ok, NodeSPs} = ps_bench_config_manager:fetch_mqtt_node_subscription_purposes(),
+    case ps_bench_config_manager:fetch_node_name() of
+        {ok, NodeName} ->
+            case proplists:get_value(NodeName, NodeSPs) of
+                undefined -> {ok, undefined};
+                SP -> {ok, ps_bench_utils:convert_to_binary(SP)}
+            end;
+        _ ->
+            {ok, undefined}
+    end.
 
 handle_call(connect, _From, State = #{first_start := FirstStart}) ->
     do_connect(FirstStart, State);
@@ -35,8 +56,10 @@ handle_call(connect_clean, _From, State) ->
 handle_call(reconnect, _From, State) ->
     do_connect(true, State);
 
-handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected}) when Connected == true ->
-    _ = emqtt:subscribe(ClientPid, Properties, Topics),
+handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected, node_purpose := NodePurpose}) when Connected == true ->
+    %% Purpose-scoped consumers subscribe ONLY to their purpose's encoded
+    %% topics; unscoped nodes keep the wildcard topics they were given.
+    _ = emqtt:subscribe(ClientPid, Properties, purpose_scoped_filters(NodePurpose, Topics)),
     {reply, ok, State};
 
 handle_call({subscribe, _Properties, _Topics}, _From, State = #{connected := Connected}) when Connected == false ->
@@ -191,6 +214,39 @@ ensure_emqtt_started() ->
         {error, {emqtt, {already_started, _}}} -> ok;
         {error, Reason} -> exit({emqtt_not_started, Reason})
     end.
+
+%% Rewrite the adapter's wildcard subscriptions into this consumer's
+%% purpose-encoded topic filters. Publishes are encoded as
+%% <topic>/[<purpose>] (see the publish clause), so the wildcard
+%% ps_bench/device/qos_<N>/# becomes ps_bench/device/qos_<N>/+/[<variant>]
+%% - one filter per decomposed purpose variant ('+' spans the device type;
+%% braces in the purpose, e.g. the scaling suffixes, expand to one filter per
+%% variant exactly like the publisher fan-out). undefined = unscoped node:
+%% topics pass through untouched. Non-wildcard topics also pass through.
+purpose_scoped_filters(undefined, Topics) ->
+    Topics;
+purpose_scoped_filters(PurposeBin, Topics) when is_binary(PurposeBin) ->
+    Variants = ps_bench_utils:decompose_purpose_filter(binary_to_list(PurposeBin)),
+    lists:flatmap(
+      fun({TopicBin, Opts}) ->
+          case strip_trailing_hash(TopicBin) of
+              {ok, Prefix} ->
+                  [{<<Prefix/binary, "+/[", (list_to_binary(V))/binary, "]">>, Opts}
+                   || V <- Variants];
+              nomatch ->
+                  [{TopicBin, Opts}]
+          end
+      end, Topics).
+
+%% Split "<prefix>/#" into {ok, <<"<prefix>/">>}; nomatch for anything else.
+strip_trailing_hash(TopicBin) when byte_size(TopicBin) > 1 ->
+    PrefixSize = byte_size(TopicBin) - 1,
+    case TopicBin of
+        <<Prefix:PrefixSize/binary, "#">> -> {ok, Prefix};
+        _ -> nomatch
+    end;
+strip_trailing_hash(_) ->
+    nomatch.
 
 %% Look up the publisher purpose for the topic's device-type suffix.
 %% Topics follow ps_bench/device/qos_<N>/<device_type>. With no mapping

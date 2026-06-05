@@ -2,10 +2,16 @@
     {name, topic_triple_purpose},
     {duration, {3, minutes}},
     {protocol, mqttv5},
-    {deployment_name, smart_factory_1_node},
+    {deployment_name, floor_40x1},
     {hosts,
     [
-        {runner1, [{hostname, "127.0.0.1"}]}
+        {floor1,                     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_predictive, [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_routine,    [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,     [{hostname, "127.0.0.1"}]}
     ]},
 
     {protocol_config,
@@ -29,6 +35,17 @@
             {robot_imu,                  ["vendor/maintenance/{1,2,3}"]},
             {robot_lidar,                ["vendor/maintenance/{1,2,3}"]},
             {robot_odometry,             ["vendor/maintenance/{1,2,3}"]}
+        ]},
+        %% One consumer per purpose; brace suffix mirrors the publisher
+        %% variants (3 encoded-topic filters per QoS).
+        {node_subscription_purposes,
+        [
+            {sub_quality_assurance,      "quality/assurance/{1,2,3}"},
+            {sub_maintenance_predictive, "maintenance/predictive/{1,2,3}"},
+            {sub_maintenance_routine,    "maintenance/routine/{1,2,3}"},
+            {sub_operations_forecast,    "operations/forecast/{1,2,3}"},
+            {sub_regulatory_reporting,   "regulatory/reporting/{1,2,3}"},
+            {sub_vendor_maintenance,     "vendor/maintenance/{1,2,3}"}
         ]}
     ]},
 

@@ -13,7 +13,7 @@
     fetch_device_reconnect_info/1]).
 
 % MQTT exports
--export([fetch_mqtt_client_module/0, fetch_mqtt_broker_information/0, fetch_mqtt_default_qos/0, fetch_mqtt_qos_for_device/1, fetch_mqtt_device_purposes/0, fetch_mqtt_purpose_variant_count/0, fetch_mqtt_purpose_fanout_model/0, fetch_mqtt_purpose_rotation_window_ms/0, fetch_mqtt_op_issue_interval_ms/0, fetch_mqtt_op_issuer_mode/0, fetch_mqtt_op_group_types/0]).
+-export([fetch_mqtt_client_module/0, fetch_mqtt_broker_information/0, fetch_mqtt_default_qos/0, fetch_mqtt_qos_for_device/1, fetch_mqtt_device_purposes/0, fetch_mqtt_purpose_variant_count/0, fetch_mqtt_purpose_fanout_model/0, fetch_mqtt_purpose_rotation_window_ms/0, fetch_mqtt_rotation_toggle_purpose/0, fetch_mqtt_node_subscription_purposes/0, fetch_mqtt_op_issue_interval_ms/0, fetch_mqtt_op_issuer_mode/0, fetch_mqtt_op_group_types/0]).
 
 % DDS exports
 -export([fetch_dds_nif_information/0, fetch_dds_domain_id/0, fetch_dds_config_file_path/0, fetch_dds_qos_profile/0]).
@@ -480,6 +480,24 @@ fetch_mqtt_purpose_rotation_window_ms() ->
         _ -> {ok, 0}
     end.
 
+%% Dynamic toggle purpose as a binary, or undefined (default) when the scenario
+%% does not configure one. With a nonzero rotation window, this is the single
+%% purpose alternately added/removed on every client's filter each window.
+fetch_mqtt_rotation_toggle_purpose() ->
+    case fetch_protocol_property(?MQTT_ROTATION_TOGGLE_PROP, undefined) of
+        {ok, undefined} -> {ok, undefined};
+        {ok, Value} -> {ok, ps_bench_utils:convert_to_binary(Value)};
+        _ -> {ok, undefined}
+    end.
+
+%% Per-node subscriber purpose map (NodeName -> SP string). Default [] so every
+%% node falls back to the match-any SP in the DAP interface.
+fetch_mqtt_node_subscription_purposes() ->
+    case fetch_protocol_property(?MQTT_NODE_SP_PROP, []) of
+        {ok, Value} when is_list(Value) -> {ok, Value};
+        _ -> {ok, []}
+    end.
+
 %% Publisher operation issuance interval in ms. 0 (default) = no op issuance.
 fetch_mqtt_op_issue_interval_ms() ->
     case fetch_protocol_property(?MQTT_OP_ISSUE_INTERVAL_PROP, 0) of
@@ -499,8 +517,8 @@ fetch_mqtt_op_issuer_mode() ->
 %% AUDIT/HISTORY/UPDATE; queue = DELETE/RESTRICT.
 fetch_mqtt_op_group_types() ->
     case fetch_protocol_property(?MQTT_OP_GROUP_PROP, ?OP_GROUP_NO_QUEUE) of
-        {ok, ?OP_GROUP_QUEUE} -> {ok, ?PLACEHOLDER_OP_GROUP_QUEUE};
-        _ -> {ok, ?PLACEHOLDER_OP_GROUP_NO_QUEUE}
+        {ok, ?OP_GROUP_QUEUE} -> {ok, ?OP_GROUP_QUEUE_TYPES};
+        _ -> {ok, ?OP_GROUP_NO_QUEUE_TYPES}
     end.
 
 fetch_dds_nif_information() ->

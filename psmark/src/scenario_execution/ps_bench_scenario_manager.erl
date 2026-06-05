@@ -110,8 +110,9 @@ rotate_all_clients() ->
 %%--------------------------------------------------------------------
 %% Operation issuance timer (publishers issue ops scoped to their own data)
 %%--------------------------------------------------------------------
-%% When op_issue_interval_ms > 0, each publisher periodically issues an
-%% operation (placeholder type) scoped to its own topic/purpose. 0 disables it.
+%% When op_issue_interval_ms > 0, the configured issuer(s) (op_issuer_mode)
+%% periodically issue an op-group operation (op_group: AUDIT/HISTORY/UPDATE or
+%% DELETE/RESTRICT) scoped to their own topic/purpose. 0 disables it.
 maybe_start_op_timer() ->
     {ok, IntervalMs} = ps_bench_config_manager:fetch_mqtt_op_issue_interval_ms(),
     case IntervalMs of
