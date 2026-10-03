@@ -111,6 +111,9 @@ handle_call(disconnect, _From, State = #{server_reference := ServerReference}) -
     gen_server:call(ServerReference, disconnect),
     {reply, ok, State};
 
+handle_call(op_issue_ready, _From, State = #{server_reference := ServerReference}) ->
+    {reply, (catch gen_server:call(ServerReference, op_issue_ready, 1000)) =:= true, State};
+
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 

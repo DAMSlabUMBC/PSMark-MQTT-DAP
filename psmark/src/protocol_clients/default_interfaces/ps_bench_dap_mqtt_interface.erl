@@ -148,6 +148,10 @@ handle_call(disconnect, _From, State = #{client_pid := ClientPid, connected := C
             {reply, ok, State}
     end;
 
+%% Ready to issue operations once connected with an MP registered, i.e. after publishing.
+handle_call(op_issue_ready, _From, State = #{connected := Connected, registered_topics := Regs}) ->
+    {reply, Connected andalso map_size(Regs) > 0, State};
+
 handle_call(stop, _From, State) ->
     % Do nothing
     {reply, ok, State};
