@@ -127,6 +127,8 @@ start_broker() {  # start_broker <group>
 stop_broker() {  # stop_broker <cell_dir> ; capture logs first, record teardown status
   local cell_dir="$1"
   docker logs "${BROKER_NAME}" > "${cell_dir}/broker.log" 2>&1 || true
+  # The DAP broker's per-message metrics (re-verifications for the DPR); stock has none.
+  docker cp "${BROKER_NAME}:/tmp/dap_broker_metrics.csv" "${cell_dir}/broker_metrics.csv" >/dev/null 2>&1 || true
   # The DAP broker is known to segfault on shutdown (exit 139). That is a
   # teardown-time crash AFTER data collection; record it, never fail the cell
   # transition on it - just make sure the container and port are really gone.
@@ -305,6 +307,9 @@ for pass in $(seq 1 "${PASSES}"); do
       log "pass ${pass} cell ${cell}: FAILED (see ${cell_dir}/nodes/*/node.log) - continuing with next cell"
       continue   # breadth-first: a bad cell must not starve the rest of the pass
     fi
+    # EAR/ERR, DPR and operation coverage/leakage/completion for the cell
+    python3 "${SCRIPT_DIR}/dap_metrics.py" "${cell_dir}" --json "${cell_dir}/dap_metrics.json" \
+      > "${cell_dir}/dap_metrics.txt" 2>&1 || log "pass ${pass} cell ${cell}: dap_metrics.py failed (see dap_metrics.txt)"
     date '+%F %T' > "${cell_dir}/DONE"
     log "pass ${pass} cell ${cell}: DONE"
   done
