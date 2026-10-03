@@ -92,6 +92,7 @@ handle_call(reconnect, _From, State) ->
 handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, client_name := ClientIdBin, connected := Connected}) when Connected == true ->
     SP = effective_sp(State),
     DapProperties = Properties#{'User-Property' => [{?DAP_KEY_SP, SP}]},
+    record_sp(ClientIdBin, SP),
     _ = emqtt:subscribe(ClientPid, DapProperties, Topics),
     %% Also listen on this subscriber's operation-request inbox (OP_REQ/<id>) so
     %% the broker can forward scoped operations about the data it received. The
@@ -184,6 +185,8 @@ handle_cast({issue_operation, OpType}, State = #{connected := true, client_pid :
                     {?DAP_KEY_CONSENT, <<"1">>}
                 ],
                 'Response-Topic' => Notif},
+    ps_bench_store:record_dap_event(erlang:system_time(nanosecond), ClientIdBin, op_issue, OpTFs,
+                                    #{op_type => OpType, detail => OpPFs}),
     emqtt:publish(ClientPid, ?DAP_TOPIC_OSYS, OpProps, <<>>, [{qos, 0}]),
     {noreply, State};
 handle_cast({issue_operation, _OpType}, State) ->
@@ -215,6 +218,11 @@ handle_cast({respond_to_op, _Props}, State) ->
 handle_cast(_, State) ->
     {noreply, State}.
 
+%% Record the SP a subscription is about to be sent with, for residual-error analysis.
+record_sp(ClientIdBin, SP) ->
+    ps_bench_store:record_dap_event(erlang:system_time(nanosecond), ClientIdBin, sp_subscribe, <<>>,
+                                    #{detail => SP}).
+
 %% Subscribe a client to its OP_REQ/<id> operation-request inbox.
 subscribe_op_request_inbox(ClientPid, ClientIdBin) ->
     Inbox = <<(?DAP_TOPIC_OP_REQ)/binary, "/", ClientIdBin/binary>>,
@@ -241,7 +249,7 @@ prop_value(_Key, _Props, Default) ->
     Default.
 
 %% Re-subscribe with the current rotation SP (subscriber clients only).
-rotate_subscriptions(State = #{connected := true, client_pid := ClientPid,
+rotate_subscriptions(State = #{connected := true, client_pid := ClientPid, client_name := ClientIdBin,
                                sub_topics := Topics, applied_sp := Applied})
   when Topics =/= [] ->
     SP = effective_sp(State),
@@ -250,6 +258,7 @@ rotate_subscriptions(State = #{connected := true, client_pid := ClientPid,
             State;
         false ->
             DapProperties = #{'User-Property' => [{<<"DAP-SP">>, SP}]},
+            record_sp(ClientIdBin, SP),
             _ = emqtt:subscribe(ClientPid, DapProperties, Topics),
             State#{applied_sp := SP}
     end;
@@ -437,6 +446,8 @@ ensure_mp_registered(ClientPid, ClientIdBin, Topic, PurposeBin, Regs) ->
             Regs;
         _ ->
             MpValue = <<PurposeBin/binary, ":", Topic/binary>>,
+            ps_bench_store:record_dap_event(erlang:system_time(nanosecond), ClientIdBin, mp_register, Topic,
+                                            #{detail => PurposeBin}),
             RegProperties = #{'User-Property' => [
                 {<<"DAP-ClientID">>, ClientIdBin},
                 {<<"DAP-MP">>, MpValue},
