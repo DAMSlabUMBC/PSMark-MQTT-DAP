@@ -10,10 +10,8 @@
 %% The real node -> SP mapping lives in each scenario's protocol_config under
 %% node_subscription_purposes (paper SS2.2 consumer grouping; see the
 %% experiments/DAP/Smoke scenarios). A value may be a single filter or a
-%% '|'-joined multi-filter; the broker delivers when the SP matches ANY one of
-%% the message-purpose filters (see purpose_filter_mp_matches_sp in the broker).
-%% Nodes not listed fall back to "*" (match-any) so every existing scenario
-%% keeps its previous wildcard behavior.
+%% '|'-joined multi-filter; the broker delivers when the MP permits every purpose
+%% of the SP. Nodes not listed fall back to "*", which only an MP of "*" permits.
 -define(DEFAULT_NODE_SP, <<"*">>).
 
 %% ===== Dynamic-purpose add/remove toggle (paper SS7.3) =====
