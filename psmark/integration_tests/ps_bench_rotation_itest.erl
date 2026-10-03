@@ -3,10 +3,13 @@
 %% Drives the REAL ps_bench_dap_mqtt_interface against a live DAP broker with
 %% rotation enabled (purpose_rotation_window_ms > 0). Each window the active
 %% filter alternates between ADDING and REMOVING a single purpose
-%% (?PLACEHOLDER_ROTATION_TOGGLE). The publisher MP base and subscriber SP base
-%% are DISTINCT and non-overlapping, so the toggled purpose is the ONLY token the
-%% two filters can intersect on: data flows exactly in "added" windows and stops
-%% in "removed" windows. That makes the toggle observable at the delivery layer.
+%% (rotation_toggle_purpose). The subscriber's SP is only the toggled purpose and
+%% the publisher's MP base does not contain it, so data flows exactly in "added"
+%% windows, where the MP carries the toggled purpose too and so permits the SP, and
+%% stops in "removed" windows, where the SP is empty (consent withdrawn). That makes
+%% the toggle observable at the delivery layer.
+%%
+%% The node has the subscriber role: PSMark toggles only a subscriber node's SP.
 %%
 %% Two runs:
 %%   LOCKSTEP (subscriber DOES toggle its SP): publisher MP and subscriber SP add
@@ -44,7 +47,7 @@
 %% bucket delivery by the toggle state.
 -define(TOGGLE, <<"maintenance/routine">>).
 -define(MP_BASE, [<<"maintenance/predictive">>]).
--define(SP_BASE, [<<"quality/assurance">>]).
+-define(SP_BASE, []).
 
 start(_Type, _Args) ->
     ok = ps_bench_config_manager:load_config_from_env_vars(),
@@ -67,7 +70,7 @@ main() ->
 
         io:format("~n==== DYNAMIC PURPOSE TOGGLE RESULTS ====~n"),
         io:format("  toggle purpose=~p~n", [?TOGGLE]),
-        io:format("  MP base=~p   SP base=~p (distinct -> toggle is the only link)~n",
+        io:format("  MP base=~p   SP base=~p (the toggle is the only link)~n",
                   [?MP_BASE, ?SP_BASE]),
         io:format("  window=~pms  windows=~p~n", [?WINDOW_MS, ?N_WINDOWS]),
         io:format("  LOCKSTEP (sub toggles SP in sync):~n"),
@@ -104,7 +107,7 @@ main() ->
 %% consecutive windows, demonstrating the single-purpose add/remove toggle and
 %% that both sides flip together.
 show_schedule() ->
-    io:format("~n  schedule (MP base/SP base distinct, toggle added on even windows):~n"),
+    io:format("~n  schedule (toggle added on even windows):~n"),
     Base = erlang:system_time(millisecond),
     Base0 = (Base div ?WINDOW_MS) * ?WINDOW_MS,
     lists:foreach(
@@ -294,7 +297,7 @@ setup_config_files() ->
 
     Deployment =
         "[{name, tog_dep},\n"
-        " {nodes, [{tog_node, [{devices, [{tog_dev, 1}]}]}]}].\n",
+        " {nodes, [{tog_node, [{devices, [{tog_dev, 1}]}, {role, subscriber}]}]}].\n",
     ok = file:write_file(DepDir ++ "/tog.deployment", Deployment),
 
     Scenario =
@@ -308,7 +311,10 @@ setup_config_files() ->
         "   {broker, \"" ?BROKER_HOST "\"},\n"
         "   {port, " ++ integer_to_list(?BROKER_PORT) ++ "},\n"
         "   {qos, [{default_qos, 0}]},\n"
-        "   {purpose_rotation_window_ms, " ++ integer_to_list(?WINDOW_MS) ++ "}]},\n"
+        "   {purpose_rotation_window_ms, " ++ integer_to_list(?WINDOW_MS) ++ "},\n"
+        "   {rotation_toggle_purpose, \"maintenance/routine\"},\n"
+        "   {device_purposes, [{tog_dev, \"maintenance/predictive\"}]},\n"
+        "   {node_subscription_purposes, [{tog_node, \"maintenance/routine\"}]}]},\n"
         " {metric_config,\n"
         "  [{output_dir, \"" ?DIR "/results\"},\n"
         "   {hw_stats_poll_period_ms, 1000},\n"

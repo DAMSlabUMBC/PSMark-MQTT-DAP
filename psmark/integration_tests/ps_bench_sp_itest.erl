@@ -1,17 +1,16 @@
 %% Part 2 integration proof: per-node DAP-SP replaces the hardcoded "*".
 %%
 %% Drives the REAL ps_bench_dap_mqtt_interface against a live DAP broker. The
-%% subscriber runs on node 'runner_maintenance', whose placeholder SP is the
-%% multi-filter "maintenance/predictive|maintenance/routine". Three publishers
-%% register message purposes maintenance/predictive, maintenance/routine and
-%% quality/assurance and publish data.
+%% subscriber runs on node 'runner_maintenance', whose SP (node_subscription_purposes)
+%% is the collection "maintenance/predictive|maintenance/routine". Three publishers
+%% register message purposes maintenance/{predictive,routine}, maintenance/predictive
+%% and quality/assurance and publish data.
 %%
-%% Proves:
-%%   * data whose MP matches EITHER side of the '|' multi-filter is delivered
-%%     (maintenance/predictive AND maintenance/routine both arrive);
-%%   * data whose MP matches NEITHER (quality/assurance) is NOT delivered.
-%% The exclusion is only possible if the real per-node SP is on the wire: with
-%% the old "*" the quality/assurance message would have been delivered too.
+%% Proves, under the paper's rule that the MP must permit every purpose of the SP:
+%%   * data whose MP permits both purposes of the SP is delivered;
+%%   * data whose MP permits only one of them (maintenance/predictive) is NOT;
+%%   * data whose MP permits neither (quality/assurance) is NOT.
+%% The exclusions are only possible if the real per-node SP is on the wire.
 %%
 %% Run (broker must be up on BROKER_PORT, DAP build):
 %%   erlc -I include -o integration_tests integration_tests/ps_bench_sp_itest.erl
@@ -27,8 +26,8 @@
 -define(DIR, "/tmp/ps_bench_sp_itest").
 -define(SUB_NODE, runner_maintenance).
 
+-define(T_BOTH, <<"ps_bench/device/qos_0/dev_both">>).
 -define(T_PRED, <<"ps_bench/device/qos_0/dev_pred">>).
--define(T_ROUT, <<"ps_bench/device/qos_0/dev_rout">>).
 -define(T_QA,   <<"ps_bench/device/qos_0/dev_qa">>).
 
 start(_Type, _Args) ->
@@ -45,12 +44,12 @@ main() ->
         %% Subscriber on runner_maintenance -> multi-filter SP.
         {ok, _} = ps_bench_dap_mqtt_interface:start_link(p2_scn, p2_sub, self()),
         {ok, _} = ps_bench_dap_mqtt_interface:start_link(p2_scn, p2_pub_pred, self()),
-        {ok, _} = ps_bench_dap_mqtt_interface:start_link(p2_scn, p2_pub_rout, self()),
+        {ok, _} = ps_bench_dap_mqtt_interface:start_link(p2_scn, p2_pub_both, self()),
         {ok, _} = ps_bench_dap_mqtt_interface:start_link(p2_scn, p2_pub_qa, self()),
 
         {ok, _} = gen_server:call(p2_sub, connect),
         {ok, _} = gen_server:call(p2_pub_pred, connect),
-        {ok, _} = gen_server:call(p2_pub_rout, connect),
+        {ok, _} = gen_server:call(p2_pub_both, connect),
         {ok, _} = gen_server:call(p2_pub_qa, connect),
         timer:sleep(300),
 
@@ -59,25 +58,25 @@ main() ->
         timer:sleep(400),
 
         %% Publishers register MP (from device_purposes) and publish.
+        publish(p2_pub_both, ?T_BOTH),
         publish(p2_pub_pred, ?T_PRED),
-        publish(p2_pub_rout, ?T_ROUT),
         publish(p2_pub_qa,   ?T_QA),
         timer:sleep(800),
 
         Recv = drain_recv([]),
+        GotBoth = lists:member(?T_BOTH, Recv),
         GotPred = lists:member(?T_PRED, Recv),
-        GotRout = lists:member(?T_ROUT, Recv),
         GotQA   = lists:member(?T_QA, Recv),
 
         io:format("~n==== PART 2 RESULTS ====~n"),
-        io:format("  subscriber node=~p  placeholder SP=~p~n",
+        io:format("  subscriber node=~p  SP=~p~n",
                   [?SUB_NODE, <<"maintenance/predictive|maintenance/routine">>]),
         io:format("  received topics: ~p~n", [Recv]),
-        io:format("  maintenance/predictive delivered (filter 1 match): ~p~n", [GotPred]),
-        io:format("  maintenance/routine    delivered (filter 2 match): ~p~n", [GotRout]),
-        io:format("  quality/assurance      delivered (no filter match): ~p (expect false)~n", [GotQA]),
+        io:format("  maintenance/{predictive,routine} delivered (permits both): ~p~n", [GotBoth]),
+        io:format("  maintenance/predictive           delivered (permits one): ~p (expect false)~n", [GotPred]),
+        io:format("  quality/assurance                delivered (permits none): ~p (expect false)~n", [GotQA]),
 
-        Ok = GotPred andalso GotRout andalso (not GotQA),
+        Ok = GotBoth andalso (not GotPred) andalso (not GotQA),
         case Ok of
             true  -> io:format("~nPART 2 PASSED~n"), halt(0);
             false -> io:format("~nPART 2 FAILED~n"), halt(1)
@@ -134,7 +133,7 @@ setup_config_files() ->
         " {reconnect_chance_pct, 0.0}].\n"
     end,
     ok = file:write_file(DevDir ++ "/dev_pred.device", Dev("dev_pred")),
-    ok = file:write_file(DevDir ++ "/dev_rout.device", Dev("dev_rout")),
+    ok = file:write_file(DevDir ++ "/dev_both.device", Dev("dev_both")),
     ok = file:write_file(DevDir ++ "/dev_qa.device", Dev("dev_qa")),
 
     Deployment =
@@ -153,9 +152,11 @@ setup_config_files() ->
         "   {broker, \"" ?BROKER_HOST "\"},\n"
         "   {port, " ++ integer_to_list(?BROKER_PORT) ++ "},\n"
         "   {qos, [{default_qos, 0}]},\n"
-        "   {device_purposes, [{dev_pred, \"maintenance/predictive\"},\n"
-        "                      {dev_rout, \"maintenance/routine\"},\n"
-        "                      {dev_qa,   \"quality/assurance\"}]}]},\n"
+        "   {device_purposes, [{dev_both, \"maintenance/{predictive,routine}\"},\n"
+        "                      {dev_pred, \"maintenance/predictive\"},\n"
+        "                      {dev_qa,   \"quality/assurance\"}]},\n"
+        "   {node_subscription_purposes,\n"
+        "    [{runner_maintenance, \"maintenance/predictive|maintenance/routine\"}]}]},\n"
         " {metric_config,\n"
         "  [{output_dir, \"" ?DIR "/results\"},\n"
         "   {hw_stats_poll_period_ms, 1000},\n"
