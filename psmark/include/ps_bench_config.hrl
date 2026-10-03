@@ -36,9 +36,11 @@
 -define(DEPLOYMENT_ROLE_PROP, role).
 -define(DEPLOYMENT_OPT_NODE_KEYS, [?DEPLOYMENT_ROLE_PROP]).
 % Node roles: publisher (default) runs device publishers AND a subscription client
-% (unchanged legacy behavior); subscriber runs ONLY a subscription client.
+% (unchanged legacy behavior); subscriber runs ONLY a subscription client;
+% publisher_only runs ONLY device publishers.
 -define(DEPLOYMENT_ROLE_PUBLISHER, publisher).
 -define(DEPLOYMENT_ROLE_SUBSCRIBER, subscriber).
+-define(DEPLOYMENT_ROLE_PUBLISHER_ONLY, publisher_only).
 
 % Scenario file fields
 -define(SCENARIO_NAME_PROP, name).

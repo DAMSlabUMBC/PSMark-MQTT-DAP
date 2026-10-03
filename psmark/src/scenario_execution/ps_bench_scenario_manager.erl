@@ -220,11 +220,9 @@ node_role() ->
     persistent_term:get({?MODULE, node_role}, ?DEPLOYMENT_ROLE_PUBLISHER).
 
 has_publishers() ->
-    node_role() =:= ?DEPLOYMENT_ROLE_PUBLISHER.
+    node_role() =:= ?DEPLOYMENT_ROLE_PUBLISHER orelse node_role() =:= ?DEPLOYMENT_ROLE_PUBLISHER_ONLY.
 
 has_subscriber() ->
-    %% Both publisher and subscriber roles run a subscription client today.
-    %% Threaded as a guard so a future publisher-only role drops in cleanly.
     node_role() =:= ?DEPLOYMENT_ROLE_PUBLISHER orelse node_role() =:= ?DEPLOYMENT_ROLE_SUBSCRIBER.
 
 initialize_clients_for_devices(_NodeName, [], ClientList) ->

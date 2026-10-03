@@ -9,6 +9,7 @@
     [
         {floor1,
         [
+            {role, publisher_only},
             {devices,
             [
                 {machine_temperature_sensor, 6},
