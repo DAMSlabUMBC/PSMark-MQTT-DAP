@@ -82,12 +82,12 @@ handle_call(connect, _From, State = #{first_start := FirstStart}) ->
 
 handle_call(connect_clean, _From, State) ->
     % Force clean connect
-    do_connect(false, State);
+    do_connect(true, State);
 
 handle_call(reconnect, _From, State) ->
     % Force restablishment of session
     % By the MQTT standard, this just starts a clean session if none existed previously
-    do_connect(true, State);
+    do_connect(false, State);
 
 handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, client_name := ClientIdBin, connected := Connected}) when Connected == true ->
     SP = effective_sp(State),
@@ -171,10 +171,11 @@ handle_cast({issue_operation, OpType}, State = #{connected := true, client_pid :
                                                  client_name := ClientIdBin, registered_topics := Regs}) ->
     OpTFs = join_binaries(maps:keys(Regs), <<",">>, ?DAP_ALLOW_ALL_FILTER),
     OpPFs = join_binaries(lists:usort(maps:values(Regs)), <<",">>, ?DAP_ALLOW_ALL_FILTER),
-    %% Listen for the broker's status notification about our own requests.
+    %% Listen for the broker's status notification about our own requests. QoS 1
+    %% and a kept session deliver it at least once, also across a disconnect (paper 6.2).
     Notif = <<(?DAP_TOPIC_OP_NOTIF)/binary, "/", ClientIdBin/binary>>,
     _ = emqtt:subscribe(ClientPid, #{'User-Property' => [{?DAP_KEY_SP, ?DAP_OP_PURPOSE}]},
-                        [{Notif, [{qos, 0}]}]),
+                        [{Notif, [{qos, 1}]}]),
     OpProps = #{'User-Property' => [
                     {?DAP_KEY_OPTYPE, OpType},
                     {?DAP_KEY_OPTFS, OpTFs},
@@ -218,7 +219,7 @@ handle_cast(_, State) ->
 subscribe_op_request_inbox(ClientPid, ClientIdBin) ->
     Inbox = <<(?DAP_TOPIC_OP_REQ)/binary, "/", ClientIdBin/binary>>,
     emqtt:subscribe(ClientPid, #{'User-Property' => [{?DAP_KEY_SP, ?DAP_OP_PURPOSE}]},
-                    [{Inbox, [{qos, 0}]}]).
+                    [{Inbox, [{qos, 1}]}]).
 
 %% Join a list of binaries with Sep, or return Default for the empty list.
 join_binaries([], _Sep, Default) -> Default;
@@ -352,6 +353,9 @@ start_client_link(ClientName, CleanStart, OwnerPid) ->
         {port, BrokerPort},
         {clientid, ClientName},
         {clean_start, CleanStart},
+        %% Keep the session across a device's simulated disconnects, so operation
+        %% requests and notifications sent meanwhile are delivered on reconnect.
+        {properties, #{'Session-Expiry-Interval' => ?DAP_SESSION_EXPIRY_SECS}},
         {msg_handler, #{disconnected => fun(Reason) -> disconnect_event(OwnerPid, Reason, ClientName) end,
                         publish => fun(Msg) -> publish_event(OwnerPid, Msg, ClientName) end}}
     ],
