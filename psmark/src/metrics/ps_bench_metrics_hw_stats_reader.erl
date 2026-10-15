@@ -201,6 +201,13 @@ calculate_hw_stats(StatType, NodeType) ->
                                     end
                         end,
 
+      case length(AllStatEvents) of
+            % No node_exporter answered: nothing to summarize
+            0 -> {0, 0, 0, 0, 0, 0, 0, 0};
+            _ -> summarize_hw_stats(AllStatEvents)
+      end.
+
+summarize_hw_stats(AllStatEvents) ->
       TotalEvents = length(AllStatEvents),
       TotalUsage = lists:foldl(fun({_, _, UsageVal}, Total) -> Total + UsageVal end, 0, AllStatEvents),
       AvgUsage = TotalUsage / TotalEvents,
@@ -224,16 +231,16 @@ calculate_hw_stats(StatType, NodeType) ->
                                           {_, _, UsageVal2} = Event2,
                                           UsageVal1 < UsageVal2
                                     end, AllStatEvents),
-      MedianIndex = TotalEvents div 2, % Integer divison
+      MedianIndex = max(1, TotalEvents div 2), % Integer divison
       {_, _, MedianUsage} = lists:nth(MedianIndex, SortedEvents),
 
       % Now compute P90/95/99 values with the sorted events
       % First calculate indexes as (TotalEvents * p_val)
       % e.g. for 500 events, the 90th percentile index would be 450
       % We round down for a more conservative measurement
-      P90Index = erlang:trunc(TotalEvents * 0.90),
-      P95Index = erlang:trunc(TotalEvents * 0.95),
-      P99Index = erlang:trunc(TotalEvents * 0.99),
+      P90Index = max(1, erlang:trunc(TotalEvents * 0.90)),
+      P95Index = max(1, erlang:trunc(TotalEvents * 0.95)),
+      P99Index = max(1, erlang:trunc(TotalEvents * 0.99)),
 
       {_, _, P90Usage} = lists:nth(P90Index, SortedEvents),
       {_, _, P95Usage} = lists:nth(P95Index, SortedEvents),

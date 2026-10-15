@@ -36,9 +36,11 @@
 -define(DEPLOYMENT_ROLE_PROP, role).
 -define(DEPLOYMENT_OPT_NODE_KEYS, [?DEPLOYMENT_ROLE_PROP]).
 % Node roles: publisher (default) runs device publishers AND a subscription client
-% (unchanged legacy behavior); subscriber runs ONLY a subscription client.
+% (unchanged legacy behavior); subscriber runs only a subscription client;
+% publisher_only runs only device publishers.
 -define(DEPLOYMENT_ROLE_PUBLISHER, publisher).
 -define(DEPLOYMENT_ROLE_SUBSCRIBER, subscriber).
+-define(DEPLOYMENT_ROLE_PUBLISHER_ONLY, publisher_only).
 
 % Scenario file fields
 -define(SCENARIO_NAME_PROP, name).
@@ -80,6 +82,8 @@
 % grouping). Nodes not listed fall back to "*" (match-any), preserving the
 % legacy everything-subscriber behavior of all existing scenarios.
 -define(MQTT_NODE_SP_PROP, node_subscription_purposes).
+% Session expiry (s) for DAP clients, so operation traffic survives a reconnect
+-define(DAP_SESSION_EXPIRY_SECS, 3600).
 % NOTE: We do not require a client interface module as we fall back to a default one
 % NOTE: We do not require a default MQTT QoS as we fall back to 0
 -define(MQTT_REQ_KEY_LIST, [?MQTT_BROKER_IP_PROP, ?MQTT_BROKER_PORT_PROP]).
@@ -138,6 +142,10 @@
 -define(DAP_TOPIC_OSYS, <<"$OP_SYS">>).      % op submit / status bus
 -define(DAP_TOPIC_OP_REQ, <<"OP_REQ">>).     % forwarded request inbox base: OP_REQ/<client-id>
 -define(DAP_TOPIC_OP_NOTIF, <<"OP_NOTIF">>). % requester notification base: OP_NOTIF/<client-id>
+% Operations over stock MQTT (paper Observation 2): a request broadcast to every
+% subscriber, answered on the requester's response topic
+-define(LEGACY_OP_REQUEST_TOPIC, <<"ps_bench/ops/request">>).
+-define(LEGACY_OP_RESPONSE_TOPIC, <<"ps_bench/ops/response">>).
 -define(DAP_OP_PURPOSE, <<"DAP_OP">>).       % operation-processing consent/purpose value
 -define(DAP_KEY_CONSENT, <<"DAP-Allow">>).
 -define(DAP_KEY_CLIENTID, <<"DAP-ClientID">>).
@@ -155,6 +163,10 @@
 % The paper's operation cells use 1000 (cases i/ii: every 1 s) and the
 % full-dynamism cells reuse the rotation interval.
 -define(MQTT_OP_ISSUE_INTERVAL_PROP, op_issue_interval_ms).
+% Slow subscribers, to build broker-side queues: QoS 1 acks delayed by this many
+% ms, and at most this many messages in flight to each subscriber (0 = unset)
+-define(MQTT_SUB_ACK_DELAY_PROP, subscriber_ack_delay_ms).
+-define(MQTT_SUB_RECEIVE_MAX_PROP, subscriber_receive_maximum).
 
 % Operation ISSUER MODE selects WHO issues operations each interval. Both modes
 % scope the operation to the ISSUER's OWN topic/purpose (DAP-OpTFs/OpPFs); they

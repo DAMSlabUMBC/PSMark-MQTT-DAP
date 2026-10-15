@@ -10,10 +10,8 @@
 %% The real node -> SP mapping lives in each scenario's protocol_config under
 %% node_subscription_purposes (paper SS2.2 consumer grouping; see the
 %% experiments/DAP/Smoke scenarios). A value may be a single filter or a
-%% '|'-joined multi-filter; the broker delivers when the SP matches ANY one of
-%% the message-purpose filters (see purpose_filter_mp_matches_sp in the broker).
-%% Nodes not listed fall back to "*" (match-any) so every existing scenario
-%% keeps its previous wildcard behavior.
+%% '|'-joined multi-filter; the broker delivers when the MP permits every purpose
+%% of the SP. Nodes not listed fall back to "*", which only an MP of "*" permits.
 -define(DEFAULT_NODE_SP, <<"*">>).
 
 %% ===== Dynamic-purpose add/remove toggle (paper SS7.3) =====
@@ -84,16 +82,17 @@ handle_call(connect, _From, State = #{first_start := FirstStart}) ->
 
 handle_call(connect_clean, _From, State) ->
     % Force clean connect
-    do_connect(false, State);
+    do_connect(true, State);
 
 handle_call(reconnect, _From, State) ->
     % Force restablishment of session
     % By the MQTT standard, this just starts a clean session if none existed previously
-    do_connect(true, State);
+    do_connect(false, State);
 
 handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, client_name := ClientIdBin, connected := Connected}) when Connected == true ->
     SP = effective_sp(State),
     DapProperties = Properties#{'User-Property' => [{?DAP_KEY_SP, SP}]},
+    record_sp(ClientIdBin, SP),
     _ = emqtt:subscribe(ClientPid, DapProperties, Topics),
     %% Also listen on this subscriber's operation-request inbox (OP_REQ/<id>) so
     %% the broker can forward scoped operations about the data it received. The
@@ -149,6 +148,10 @@ handle_call(disconnect, _From, State = #{client_pid := ClientPid, connected := C
             {reply, ok, State}
     end;
 
+%% Ready to issue operations once connected with an MP registered, i.e. after publishing.
+handle_call(op_issue_ready, _From, State = #{connected := Connected, registered_topics := Regs}) ->
+    {reply, Connected andalso map_size(Regs) > 0, State};
+
 handle_call(stop, _From, State) ->
     % Do nothing
     {reply, ok, State};
@@ -173,10 +176,11 @@ handle_cast({issue_operation, OpType}, State = #{connected := true, client_pid :
                                                  client_name := ClientIdBin, registered_topics := Regs}) ->
     OpTFs = join_binaries(maps:keys(Regs), <<",">>, ?DAP_ALLOW_ALL_FILTER),
     OpPFs = join_binaries(lists:usort(maps:values(Regs)), <<",">>, ?DAP_ALLOW_ALL_FILTER),
-    %% Listen for the broker's status notification about our own requests.
+    %% Listen for the broker's status notification about our own requests. QoS 1
+    %% and a kept session deliver it at least once, also across a disconnect (paper 6.2).
     Notif = <<(?DAP_TOPIC_OP_NOTIF)/binary, "/", ClientIdBin/binary>>,
     _ = emqtt:subscribe(ClientPid, #{'User-Property' => [{?DAP_KEY_SP, ?DAP_OP_PURPOSE}]},
-                        [{Notif, [{qos, 0}]}]),
+                        [{Notif, [{qos, 1}]}]),
     OpProps = #{'User-Property' => [
                     {?DAP_KEY_OPTYPE, OpType},
                     {?DAP_KEY_OPTFS, OpTFs},
@@ -185,6 +189,8 @@ handle_cast({issue_operation, OpType}, State = #{connected := true, client_pid :
                     {?DAP_KEY_CONSENT, <<"1">>}
                 ],
                 'Response-Topic' => Notif},
+    ps_bench_store:record_dap_event(erlang:system_time(nanosecond), ClientIdBin, op_issue, OpTFs,
+                                    #{op_type => OpType, detail => OpPFs}),
     emqtt:publish(ClientPid, ?DAP_TOPIC_OSYS, OpProps, <<>>, [{qos, 0}]),
     {noreply, State};
 handle_cast({issue_operation, _OpType}, State) ->
@@ -216,11 +222,16 @@ handle_cast({respond_to_op, _Props}, State) ->
 handle_cast(_, State) ->
     {noreply, State}.
 
+%% Record the SP a subscription is about to be sent with, for residual-error analysis.
+record_sp(ClientIdBin, SP) ->
+    ps_bench_store:record_dap_event(erlang:system_time(nanosecond), ClientIdBin, sp_subscribe, <<>>,
+                                    #{detail => SP}).
+
 %% Subscribe a client to its OP_REQ/<id> operation-request inbox.
 subscribe_op_request_inbox(ClientPid, ClientIdBin) ->
     Inbox = <<(?DAP_TOPIC_OP_REQ)/binary, "/", ClientIdBin/binary>>,
     emqtt:subscribe(ClientPid, #{'User-Property' => [{?DAP_KEY_SP, ?DAP_OP_PURPOSE}]},
-                    [{Inbox, [{qos, 0}]}]).
+                    [{Inbox, [{qos, 1}]}]).
 
 %% Join a list of binaries with Sep, or return Default for the empty list.
 join_binaries([], _Sep, Default) -> Default;
@@ -242,7 +253,7 @@ prop_value(_Key, _Props, Default) ->
     Default.
 
 %% Re-subscribe with the current rotation SP (subscriber clients only).
-rotate_subscriptions(State = #{connected := true, client_pid := ClientPid,
+rotate_subscriptions(State = #{connected := true, client_pid := ClientPid, client_name := ClientIdBin,
                                sub_topics := Topics, applied_sp := Applied})
   when Topics =/= [] ->
     SP = effective_sp(State),
@@ -251,6 +262,7 @@ rotate_subscriptions(State = #{connected := true, client_pid := ClientPid,
             State;
         false ->
             DapProperties = #{'User-Property' => [{<<"DAP-SP">>, SP}]},
+            record_sp(ClientIdBin, SP),
             _ = emqtt:subscribe(ClientPid, DapProperties, Topics),
             State#{applied_sp := SP}
     end;
@@ -348,14 +360,21 @@ start_client_link(ClientName, CleanStart, OwnerPid) ->
     {ok, BrokerIP, BrokerPort} = ps_bench_config_manager:fetch_mqtt_broker_information(),
     {ok, Protocol} = ps_bench_config_manager:fetch_protocol_type(),
 
+    {AckDelayMs, ConnectProps} = consumer_settings(),
+
     % Configure properties
     PropList = [
         {host, BrokerIP},
         {port, BrokerPort},
         {clientid, ClientName},
         {clean_start, CleanStart},
+        {properties, ConnectProps},
+        {auto_ack, AckDelayMs =:= 0},
         {msg_handler, #{disconnected => fun(Reason) -> disconnect_event(OwnerPid, Reason, ClientName) end,
-                        publish => fun(Msg) -> publish_event(OwnerPid, Msg, ClientName) end}}
+                        publish => fun(Msg) ->
+                                       publish_event(OwnerPid, Msg, ClientName),
+                                       delayed_ack(AckDelayMs, Msg)
+                                   end}}
     ],
 
     % Start the client process
@@ -409,6 +428,31 @@ disconnect_event(OwnerPid, Reason, ClientName) ->
     OwnerPid ! {?DISCONNECTED_MSG, {TimeNs, Reason}, ClientName},
     ok.
 
+%% The session is kept across a device's simulated disconnects, so operation
+%% requests and notifications sent meanwhile are delivered on reconnect. A subscriber
+%% node may also consume slowly (subscriber_ack_delay_ms, subscriber_receive_maximum),
+%% so the broker queues for it.
+consumer_settings() ->
+    Props = #{'Session-Expiry-Interval' => ?DAP_SESSION_EXPIRY_SECS},
+    case ps_bench_config_manager:fetch_role_for_this_node() of
+        {ok, ?DEPLOYMENT_ROLE_SUBSCRIBER} ->
+            {ok, AckDelayMs} = ps_bench_config_manager:fetch_mqtt_subscriber_ack_delay_ms(),
+            {ok, ReceiveMax} = ps_bench_config_manager:fetch_mqtt_subscriber_receive_maximum(),
+            {AckDelayMs, case ReceiveMax of
+                             0 -> Props;
+                             _ -> Props#{'Receive-Maximum' => ReceiveMax}
+                         end};
+        _ ->
+            {0, Props}
+    end.
+
+%% Runs in the emqtt client process, so self() is the client to acknowledge through.
+delayed_ack(AckDelayMs, #{qos := 1, packet_id := PacketId}) when AckDelayMs > 0 ->
+    {ok, _} = timer:apply_after(AckDelayMs, emqtt, puback, [self(), PacketId]),
+    ok;
+delayed_ack(_AckDelayMs, _Msg) ->
+    ok.
+
 publish_event(OwnerPid, Msg = #{topic := Topic, payload := Payload}, ClientName) ->
     % Forward required event information to the adapter, now including the MQTT
     % properties so DAP operation requests/notifications can be recognized.
@@ -435,6 +479,8 @@ ensure_mp_registered(ClientPid, ClientIdBin, Topic, PurposeBin, Regs) ->
             Regs;
         _ ->
             MpValue = <<PurposeBin/binary, ":", Topic/binary>>,
+            ps_bench_store:record_dap_event(erlang:system_time(nanosecond), ClientIdBin, mp_register, Topic,
+                                            #{detail => PurposeBin}),
             RegProperties = #{'User-Property' => [
                 {<<"DAP-ClientID">>, ClientIdBin},
                 {<<"DAP-MP">>, MpValue},

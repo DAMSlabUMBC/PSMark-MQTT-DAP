@@ -41,7 +41,7 @@ SCEN_ROOT="${CONFIG_ROOT}/testcases/experiments"
 RESULTS_ROOT="${RUN_DIR}/results/paper_matrix"
 PROGRESS_LOG="${RESULTS_ROOT}/matrix_progress.log"
 
-DAP_BROKER_IMAGE="mqtt-dap-mosquitto:develop"      # built from mqtt-dap-mosquitto develop (>= 0ba79c81)
+DAP_BROKER_IMAGE="mqtt-dap-mosquitto:develop"      # built from mqtt-dap-mosquitto develop, with #4 merged
 STOCK_BROKER_IMAGE="eclipse-mosquitto:2.0"
 DAP_HOST_PORT=18883                                 # matches {port, 18883} in DAP scenarios
 STOCK_HOST_PORT=18884                               # matches {port, 18884} in baseline scenarios
@@ -49,8 +49,9 @@ BROKER_NAME="psmark-matrix-broker"                  # ONLY container this script
 COOKIE="psmark_cookie"                              # must equal ?PS_BENCH_COOKIE
 GRACE_SECS=300                                      # connect+init+metrics overhead beyond scenario duration
 
-# ---- the matrix (Appendix B, Table 5; 55 cells) ------------------------------
-# group:scenario_name - dap = DAP broker on 18883, stock = stock broker on 18884.
+# ---- the matrix (Appendix B, Tables 5-6; 107 cells) -------------------------
+# group:scenario_name - dap = DAP broker on 18883, stock = stock broker on 18884,
+# dapnv = DAP broker with dap_send_verification false on 18883 (ablation).
 # The DAP 1x purpose datapoint REUSES dap_static_base (steady-state 40x1); it is
 # deliberately not a separate cell.
 CELLS=(
@@ -77,6 +78,24 @@ CELLS=(
   "dap:dap_full_dynamism_1s"  "dap:dap_full_dynamism_1s_2xdev"  "dap:dap_full_dynamism_1s_2srv"  "dap:dap_full_dynamism_1s_2srv_2x"
   "dap:dap_full_dynamism_5s"  "dap:dap_full_dynamism_5s_2xdev"  "dap:dap_full_dynamism_5s_2srv"  "dap:dap_full_dynamism_5s_2srv_2x"
   "dap:dap_full_dynamism_10s" "dap:dap_full_dynamism_10s_2xdev" "dap:dap_full_dynamism_10s_2srv" "dap:dap_full_dynamism_10s_2srv_2x"
+  # 6. Stock-MQTT twins of 3-5: topic-encoded purposes, broadcast operations (40)
+  "stock:topic_ops_i_audit_single"   "stock:topic_ops_i_audit_single_2xdev"   "stock:topic_ops_i_audit_single_2srv"   "stock:topic_ops_i_audit_single_2srv_2x"
+  "stock:topic_ops_ii_delete_single" "stock:topic_ops_ii_delete_single_2xdev" "stock:topic_ops_ii_delete_single_2srv" "stock:topic_ops_ii_delete_single_2srv_2x"
+  "stock:topic_ops_iii_audit_all"    "stock:topic_ops_iii_audit_all_2xdev"    "stock:topic_ops_iii_audit_all_2srv"    "stock:topic_ops_iii_audit_all_2srv_2x"
+  "stock:topic_ops_iv_delete_all"    "stock:topic_ops_iv_delete_all_2xdev"    "stock:topic_ops_iv_delete_all_2srv"    "stock:topic_ops_iv_delete_all_2srv_2x"
+  "stock:topic_dynamic_1s"  "stock:topic_dynamic_1s_2xdev"  "stock:topic_dynamic_1s_2srv"  "stock:topic_dynamic_1s_2srv_2x"
+  "stock:topic_dynamic_5s"  "stock:topic_dynamic_5s_2xdev"  "stock:topic_dynamic_5s_2srv"  "stock:topic_dynamic_5s_2srv_2x"
+  "stock:topic_dynamic_10s" "stock:topic_dynamic_10s_2xdev" "stock:topic_dynamic_10s_2srv" "stock:topic_dynamic_10s_2srv_2x"
+  "stock:topic_full_dynamism_1s"  "stock:topic_full_dynamism_1s_2xdev"  "stock:topic_full_dynamism_1s_2srv"  "stock:topic_full_dynamism_1s_2srv_2x"
+  "stock:topic_full_dynamism_5s"  "stock:topic_full_dynamism_5s_2xdev"  "stock:topic_full_dynamism_5s_2srv"  "stock:topic_full_dynamism_5s_2srv_2x"
+  "stock:topic_full_dynamism_10s" "stock:topic_full_dynamism_10s_2xdev" "stock:topic_full_dynamism_10s_2srv" "stock:topic_full_dynamism_10s_2srv_2x"
+  # 7. Queuing model: slow subscribers, with and without send verification (12)
+  "dap:dap_queue_dynamic_1s"        "dapnv:dap_queue_dynamic_1s_noverify"
+  "dap:dap_queue_dynamic_5s"        "dapnv:dap_queue_dynamic_5s_noverify"
+  "dap:dap_queue_dynamic_10s"       "dapnv:dap_queue_dynamic_10s_noverify"
+  "dap:dap_queue_full_dynamism_1s"  "dapnv:dap_queue_full_dynamism_1s_noverify"
+  "dap:dap_queue_full_dynamism_5s"  "dapnv:dap_queue_full_dynamism_5s_noverify"
+  "dap:dap_queue_full_dynamism_10s" "dapnv:dap_queue_full_dynamism_10s_noverify"
 )
 
 # ---- helpers ----------------------------------------------------------------
@@ -101,14 +120,16 @@ duration_secs_for() {  # scenario {duration,{N,Units}} -> seconds
     io:format(\"~b~n\",[S]), halt(0)."
 }
 
-broker_port_for() { case "$1" in dap) echo "${DAP_HOST_PORT}";; *) echo "${STOCK_HOST_PORT}";; esac }
+broker_port_for() { case "$1" in dap|dapnv) echo "${DAP_HOST_PORT}";; *) echo "${STOCK_HOST_PORT}";; esac }
 
 start_broker() {  # start_broker <group>
   local group="$1"
   case "${group}" in
-    dap)
+    dap|dapnv)
+      local conf=mosquitto-dap.conf
+      [ "${group}" = dapnv ] && conf=mosquitto-dap-noverify.conf
       docker run -d --rm --name "${BROKER_NAME}" -p "127.0.0.1:${DAP_HOST_PORT}:1883" \
-        -v "${CONTAINER_CONFIG_DIR}/mosquitto-dap.conf:/etc/mosquitto/mosquitto.conf:ro" \
+        -v "${CONTAINER_CONFIG_DIR}/${conf}:/etc/mosquitto/mosquitto.conf:ro" \
         "${DAP_BROKER_IMAGE}" >/dev/null ;;
     stock)
       docker run -d --rm --name "${BROKER_NAME}" -p "127.0.0.1:${STOCK_HOST_PORT}:1883" \
@@ -127,6 +148,8 @@ start_broker() {  # start_broker <group>
 stop_broker() {  # stop_broker <cell_dir> ; capture logs first, record teardown status
   local cell_dir="$1"
   docker logs "${BROKER_NAME}" > "${cell_dir}/broker.log" 2>&1 || true
+  # The DAP broker's per-message metrics (re-verifications for the DPR); stock has none.
+  docker cp "${BROKER_NAME}:/tmp/dap_broker_metrics.csv" "${cell_dir}/broker_metrics.csv" >/dev/null 2>&1 || true
   # The DAP broker is known to segfault on shutdown (exit 139). That is a
   # teardown-time crash AFTER data collection; record it, never fail the cell
   # transition on it - just make sure the container and port are really gone.
@@ -249,7 +272,7 @@ for img in "${DAP_BROKER_IMAGE}" "${STOCK_BROKER_IMAGE}"; do
   docker image inspect "${img}" >/dev/null 2>&1 \
     || { echo "PRE-RUN FAIL: broker image '${img}' not found locally" >&2; exit 1; }
 done
-for conf in mosquitto-dap.conf mosquitto-stock.conf; do
+for conf in mosquitto-dap.conf mosquitto-dap-noverify.conf mosquitto-stock.conf; do
   [ -f "${CONTAINER_CONFIG_DIR}/${conf}" ] \
     || { echo "PRE-RUN FAIL: missing ${CONTAINER_CONFIG_DIR}/${conf}" >&2; exit 1; }
 done
@@ -305,10 +328,15 @@ for pass in $(seq 1 "${PASSES}"); do
       log "pass ${pass} cell ${cell}: FAILED (see ${cell_dir}/nodes/*/node.log) - continuing with next cell"
       continue   # breadth-first: a bad cell must not starve the rest of the pass
     fi
+    # EAR/ERR, DPR and operation coverage/leakage/completion for the cell
+    python3 "${SCRIPT_DIR}/dap_metrics.py" "${cell_dir}" --json "${cell_dir}/dap_metrics.json" \
+      > "${cell_dir}/dap_metrics.txt" 2>&1 || log "pass ${pass} cell ${cell}: dap_metrics.py failed (see dap_metrics.txt)"
     date '+%F %T' > "${cell_dir}/DONE"
     log "pass ${pass} cell ${cell}: DONE"
   done
   log "=== PASS ${pass}/${PASSES} COMPLETE ==="
 done
 
+python3 "${SCRIPT_DIR}/dap_metrics_summary.py" "${RESULTS_ROOT}" > "${RESULTS_ROOT}/dap_metrics_summary.csv" \
+  || log "dap_metrics_summary.py failed"
 log "Matrix run finished."
