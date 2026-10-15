@@ -8,8 +8,8 @@
 %%
 %% Proves, under the paper's rule that the MP must permit every purpose of the SP:
 %%   * data whose MP permits both purposes of the SP is delivered;
-%%   * data whose MP permits only one of them (maintenance/predictive) is NOT;
-%%   * data whose MP permits neither (quality/assurance) is NOT.
+%%   * data whose MP permits only one of them (maintenance/predictive) is not;
+%%   * data whose MP permits neither (quality/assurance) is not.
 %% The exclusions are only possible if the real per-node SP is on the wire.
 %%
 %% Run (broker must be up on BROKER_PORT, DAP build):

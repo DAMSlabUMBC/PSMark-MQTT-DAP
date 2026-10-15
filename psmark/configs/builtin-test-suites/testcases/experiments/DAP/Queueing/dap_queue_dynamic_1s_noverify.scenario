@@ -1,5 +1,6 @@
-% Queuing-model cell: dap_dynamic_1s with QoS 1 data and slow subscribers (acks after 10 ms, at
-% most 10 in flight), so the broker queues and re-verifies on a broker with dap_send_verification false.
+% Queuing-model cell: dap_dynamic_1s with QoS 1 data and slow subscribers (acks after 10 ms,
+% at most 10 in flight), so the broker queues data for them. The broker runs with
+% dap_send_verification false, so it sends queued data without checking it again.
 [
     {name, dap_queue_dynamic_1s_noverify},
     {duration, {60, seconds}},

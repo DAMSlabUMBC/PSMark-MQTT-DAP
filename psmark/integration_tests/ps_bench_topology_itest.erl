@@ -1,6 +1,6 @@
 %% Floors x devices topology load proof.
 %%
-%% Loads the committed floor deployments through the REAL config loader
+%% Loads the committed floor deployments through the real config loader
 %% (ps_bench_config_manager:load_config_from_env_vars/0 -> load_config/3), via the
 %% steady-state DAP cell of each scaling, and asserts the paper topology (SS7.3):
 %%

@@ -67,7 +67,7 @@ handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := Clie
     {reply, ok, State};
 
 handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, client_name := ClientIdBin, connected := Connected}) when Connected == true ->
-    %% Purpose-scoped consumers subscribe ONLY to their purpose's encoded topics,
+    %% Purpose-scoped consumers subscribe only to their purpose's encoded topics,
     %% and to the broadcast operation requests.
     Purposes = sub_purposes(State),
     record_sp(ClientIdBin, Purposes),

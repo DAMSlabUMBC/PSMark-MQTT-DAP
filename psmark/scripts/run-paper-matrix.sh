@@ -41,7 +41,7 @@ SCEN_ROOT="${CONFIG_ROOT}/testcases/experiments"
 RESULTS_ROOT="${RUN_DIR}/results/paper_matrix"
 PROGRESS_LOG="${RESULTS_ROOT}/matrix_progress.log"
 
-DAP_BROKER_IMAGE="mqtt-dap-mosquitto:develop"      # built from mqtt-dap-mosquitto develop (>= 0ba79c81)
+DAP_BROKER_IMAGE="mqtt-dap-mosquitto:develop"      # built from mqtt-dap-mosquitto develop, with #4 merged
 STOCK_BROKER_IMAGE="eclipse-mosquitto:2.0"
 DAP_HOST_PORT=18883                                 # matches {port, 18883} in DAP scenarios
 STOCK_HOST_PORT=18884                               # matches {port, 18884} in baseline scenarios
