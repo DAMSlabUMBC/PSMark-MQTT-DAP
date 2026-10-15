@@ -214,12 +214,15 @@ record_op_message(RecvTimeNs, ClientName, Topic, Props, Payload) ->
 
 %% A broker-forwarded operation request arrives on OP_REQ/<client-id>.
 is_op_request_topic(<<"OP_REQ/", _/binary>>) -> true;
+is_op_request_topic(?LEGACY_OP_REQUEST_TOPIC) -> true;
 is_op_request_topic(_) -> false.
 
 %% Op-system / control-plane traffic that is not benchmark data.
 is_op_system_topic(<<"OP_REQ/", _/binary>>)   -> true;
 is_op_system_topic(<<"OP_NOTIF/", _/binary>>) -> true;
 is_op_system_topic(<<"$OP", _/binary>>)       -> true;
+is_op_system_topic(?LEGACY_OP_REQUEST_TOPIC)  -> true;
+is_op_system_topic(<<"ps_bench/ops/response/", _/binary>>) -> true;
 is_op_system_topic(_) -> false.
 
 do_subscribe(_Topics, ServerReference, Tid) ->

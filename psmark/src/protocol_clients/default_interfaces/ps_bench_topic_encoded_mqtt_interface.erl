@@ -28,7 +28,12 @@ init({ScenarioName, RegName, OwnerPid}) ->
     {ok, VariantCount} = ps_bench_config_manager:fetch_mqtt_purpose_variant_count(),
     {ok, FanoutModel} = ps_bench_config_manager:fetch_mqtt_purpose_fanout_model(),
     {ok, NodePurpose} = resolve_node_purpose(),
-    {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, purpose_map => PurposeMap, variant_count => VariantCount, fanout_model => FanoutModel, node_purpose => NodePurpose}}.
+    {ok, RotationWindowMs} = ps_bench_config_manager:fetch_mqtt_purpose_rotation_window_ms(),
+    {ok, TogglePurpose} = ps_bench_config_manager:fetch_mqtt_rotation_toggle_purpose(),
+    {ok, NodeRole} = ps_bench_config_manager:fetch_role_for_this_node(),
+    {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, purpose_map => PurposeMap, variant_count => VariantCount, fanout_model => FanoutModel, node_purpose => NodePurpose,
+           rotation_window_ms => RotationWindowMs, rotation_toggle => TogglePurpose, node_role => NodeRole,
+           sub_topics => [], applied => [], published => #{}, op_seq => 0}}.
 
 %% Per-node consumer purpose for the topic-encoded baseline (paper SS2.2 /
 %% SS7.3: one subscriber per purpose, mirroring the DAP cells). Reuses the
@@ -51,29 +56,40 @@ handle_call(connect, _From, State = #{first_start := FirstStart}) ->
     do_connect(FirstStart, State);
 
 handle_call(connect_clean, _From, State) ->
-    do_connect(false, State);
-
-handle_call(reconnect, _From, State) ->
     do_connect(true, State);
 
-handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected, node_purpose := NodePurpose}) when Connected == true ->
-    %% Purpose-scoped consumers subscribe ONLY to their purpose's encoded
-    %% topics; unscoped nodes keep the wildcard topics they were given.
-    _ = emqtt:subscribe(ClientPid, Properties, purpose_scoped_filters(NodePurpose, Topics)),
+handle_call(reconnect, _From, State) ->
+    do_connect(false, State);
+
+handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected, node_purpose := undefined}) when Connected == true ->
+    %% Unscoped nodes keep the wildcard topics they were given.
+    _ = emqtt:subscribe(ClientPid, Properties, Topics),
     {reply, ok, State};
+
+handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, client_name := ClientIdBin, connected := Connected}) when Connected == true ->
+    %% Purpose-scoped consumers subscribe ONLY to their purpose's encoded topics,
+    %% and to the broadcast operation requests.
+    Purposes = sub_purposes(State),
+    record_sp(ClientIdBin, Purposes),
+    %% One SUBSCRIBE: with the toggled purpose removed, the filters may be empty.
+    _ = emqtt:subscribe(ClientPid, Properties, filters_for(Purposes, Topics) ++ [{?LEGACY_OP_REQUEST_TOPIC, [{qos, 1}]}]),
+    {reply, ok, State#{sub_topics := Topics, applied := Purposes}};
 
 handle_call({subscribe, _Properties, _Topics}, _From, State = #{connected := Connected}) when Connected == false ->
     {reply, ok, State};
 
 handle_call({publish, Properties, Topic, _Seq, Payload, PubOpts},
             _From,
-            State = #{client_pid := ClientPid, connected := Connected, purpose_map := PurposeMap, variant_count := VariantCount, fanout_model := FanoutModel})
+            State = #{client_pid := ClientPid, client_name := ClientIdBin, connected := Connected, published := Published})
   when is_binary(Topic), is_binary(Payload) ->
     case Connected of
         true ->
-            PurposeList = purposes_for_topic(Topic, PurposeMap),
-            %% Decompose purpose list into discrete purposes to send
-            AllPurposeList = lists:flatmap(fun(X) -> ps_bench_utils:decompose_purpose_filter(X) end, PurposeList),
+            AllPurposeList = pub_purposes(Topic, State),
+            case maps:get(Topic, Published, undefined) of
+                AllPurposeList -> ok;
+                _ -> ps_bench_store:record_dap_event(erlang:system_time(nanosecond), ClientIdBin, mp_register, Topic,
+                                                     #{detail => join(AllPurposeList, <<"|">>, <<>>)})
+            end,
 
             %% Topic-based purpose amplification: publish the same logical message
             %% under several purpose-topic labels
@@ -87,7 +103,7 @@ handle_call({publish, Properties, Topic, _Seq, Payload, PubOpts},
                   emqtt:publish(ClientPid, EncodedTopic, Properties, Payload1, PubOpts)
               end,
               AllPurposeList),
-            {reply, {ok, published}, State};
+            {reply, {ok, published}, State#{published := Published#{Topic => AllPurposeList}}};
         false ->
             %% Not connected; swallow to keep orchestration alive
             {reply, {ok, not_connected}, State}
@@ -106,11 +122,67 @@ handle_call(disconnect, _From, State = #{client_pid := ClientPid, connected := C
             {reply, ok, State}
     end;
 
+handle_call(op_issue_ready, _From, State = #{connected := Connected, published := Published}) ->
+    {reply, Connected andalso map_size(Published) > 0, State};
+
 handle_call(stop, _From, State) ->
     {reply, ok, State};
 
 handle_call(_, _, State) ->
     {reply, ok, State}.
+
+%% Dynamic purpose toggle: a subscriber subscribes to a newly added purpose's
+%% topics and unsubscribes from a removed one's. Publishers toggle per publish.
+handle_cast(rotate_purpose, State = #{connected := true, client_pid := ClientPid, client_name := ClientIdBin,
+                                      node_purpose := NodePurpose, sub_topics := Topics, applied := Applied})
+  when NodePurpose =/= undefined, Topics =/= [] ->
+    case sub_purposes(State) of
+        Applied ->
+            {noreply, State};
+        Purposes ->
+            record_sp(ClientIdBin, Purposes),
+            case filters_for(Purposes -- Applied, Topics) of
+                [] -> ok;
+                Add -> _ = emqtt:subscribe(ClientPid, #{}, Add)
+            end,
+            case [F || {F, _} <- filters_for(Applied -- Purposes, Topics)] of
+                [] -> ok;
+                Remove -> _ = emqtt:unsubscribe(ClientPid, #{}, Remove)
+            end,
+            {noreply, State#{applied := Purposes}}
+    end;
+
+%% An operation over stock MQTT (paper Observation 2, option i): broadcast to every
+%% subscriber, which answers on the requester's response topic.
+handle_cast({issue_operation, OpType}, State = #{connected := true, client_pid := ClientPid, client_name := ClientIdBin,
+                                                 published := Published, op_seq := Seq}) ->
+    OpId = <<ClientIdBin/binary, "-", (integer_to_binary(Seq + 1))/binary>>,
+    OpTFs = join(maps:keys(Published), <<",">>, <<"*">>),
+    OpPFs = join(lists:usort(lists:append(maps:values(Published))), <<",">>, <<"*">>),
+    Response = <<?LEGACY_OP_RESPONSE_TOPIC/binary, "/", ClientIdBin/binary>>,
+    _ = emqtt:subscribe(ClientPid, #{}, [{Response, [{qos, 1}]}]),
+    ps_bench_store:record_dap_event(erlang:system_time(nanosecond), ClientIdBin, op_issue, OpTFs,
+                                    #{op_type => OpType, op_id => OpId, detail => OpPFs}),
+    _ = emqtt:publish(ClientPid, ?LEGACY_OP_REQUEST_TOPIC,
+                      #{'User-Property' => [{?DAP_KEY_OPTYPE, OpType}, {?DAP_KEY_OPID, OpId}, {?DAP_KEY_OPTFS, OpTFs},
+                                            {?DAP_KEY_OPPFS, OpPFs}, {?DAP_KEY_CLIENTID, ClientIdBin}],
+                        'Response-Topic' => Response},
+                      <<>>, [{qos, 1}]),
+    {noreply, State#{op_seq := Seq + 1}};
+
+handle_cast({respond_to_op, Props}, State = #{connected := true, client_pid := ClientPid, client_name := ClientIdBin}) ->
+    case Props of
+        #{'Response-Topic' := Response} ->
+            UPs = maps:get('User-Property', Props, []),
+            Get = fun(K) -> case lists:keyfind(K, 1, UPs) of {K, V} -> V; false -> <<>> end end,
+            _ = emqtt:publish(ClientPid, Response,
+                              #{'User-Property' => [{?DAP_KEY_STATUS, <<"Success">>}, {?DAP_KEY_OPID, Get(?DAP_KEY_OPID)},
+                                                    {?DAP_KEY_OPTYPE, Get(?DAP_KEY_OPTYPE)}, {?DAP_KEY_CLIENTID, ClientIdBin}]},
+                              <<>>, [{qos, 1}]);
+        _ ->
+            ok
+    end,
+    {noreply, State};
 
 handle_cast(_, State) ->
     {noreply, State}.
@@ -151,6 +223,7 @@ start_client_link(ClientName, CleanStart, OwnerPid) ->
         {port, BrokerPort},
         {clientid, ClientName},
         {clean_start, CleanStart},
+        {properties, #{'Session-Expiry-Interval' => ?DAP_SESSION_EXPIRY_SECS}},
         {msg_handler, #{disconnected => fun(Reason) -> disconnect_event(OwnerPid, Reason, ClientName) end,
                         publish => fun(Msg) -> publish_event(OwnerPid, Msg, ClientName) end}}
     ],
@@ -226,12 +299,14 @@ ensure_emqtt_started() ->
 purpose_scoped_filters(undefined, Topics) ->
     Topics;
 purpose_scoped_filters(PurposeBin, Topics) when is_binary(PurposeBin) ->
-    Variants = ps_bench_utils:decompose_purpose_filter(binary_to_list(PurposeBin)),
+    filters_for(ps_bench_utils:decompose_purpose_filter(binary_to_list(PurposeBin)), Topics).
+
+filters_for(Variants, Topics) ->
     lists:flatmap(
       fun({TopicBin, Opts}) ->
           case strip_trailing_hash(TopicBin) of
               {ok, Prefix} ->
-                  [{<<Prefix/binary, "+/[", (list_to_binary(V))/binary, "]">>, Opts}
+                  [{<<Prefix/binary, "+/[", (ps_bench_utils:convert_to_binary(V))/binary, "]">>, Opts}
                    || V <- Variants];
               nomatch ->
                   [{TopicBin, Opts}]
@@ -248,6 +323,32 @@ strip_trailing_hash(TopicBin) when byte_size(TopicBin) > 1 ->
 strip_trailing_hash(_) ->
     nomatch.
 
+%% The subscriber's purposes now: its node SP, with the toggle purpose added or
+%% removed for the current window on a subscriber node (as the DAP interface does).
+sub_purposes(#{node_purpose := NodePurpose} = State) ->
+    toggled(ps_bench_utils:decompose_purpose_filter(binary_to_list(NodePurpose)),
+            maps:get(node_role, State) =:= ?DEPLOYMENT_ROLE_SUBSCRIBER, State).
+
+%% The purposes a publish on Topic goes out under now.
+pub_purposes(Topic, State = #{purpose_map := PurposeMap}) ->
+    Base = lists:flatmap(fun(X) -> ps_bench_utils:decompose_purpose_filter(X) end, purposes_for_topic(Topic, PurposeMap)),
+    toggled(Base, true, State).
+
+toggled(Base, true, #{rotation_window_ms := W, rotation_toggle := Toggle}) when W > 0, is_binary(Toggle) ->
+    Tokens = [ps_bench_utils:convert_to_binary(P) || P <- Base] -- [Toggle],
+    Filter = ps_bench_utils:rotation_toggle_filter(erlang:system_time(millisecond), W, Tokens, Toggle),
+    ps_bench_utils:decompose_purpose_filter(binary_to_list(Filter));
+toggled(Base, _, _State) ->
+    Base.
+
+record_sp(ClientIdBin, Purposes) ->
+    ps_bench_store:record_dap_event(erlang:system_time(nanosecond), ClientIdBin, sp_subscribe, <<>>,
+                                    #{detail => join(Purposes, <<"|">>, <<>>)}).
+
+join([], _Sep, Default) -> Default;
+join(Items, Sep, _Default) ->
+    iolist_to_binary(lists:join(Sep, [ps_bench_utils:convert_to_binary(I) || I <- Items])).
+
 %% Look up the publisher purpose for the topic's device-type suffix.
 %% Topics follow ps_bench/device/qos_<N>/<device_type>. With no mapping
 %% configured the encoded topic uses a default token so the shape is
@@ -258,6 +359,7 @@ purposes_for_topic(Topic, PurposeMap) ->
             DeviceType = binary_to_atom(DeviceTypeBin, utf8),
             case proplists:get_value(DeviceType, PurposeMap) of
                 undefined -> ["p1"];
+                [C | _] = P when is_integer(C) -> [P];
                 P -> P
             end;
         _ ->

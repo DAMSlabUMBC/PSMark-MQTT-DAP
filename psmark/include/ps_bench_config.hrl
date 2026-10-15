@@ -142,6 +142,10 @@
 -define(DAP_TOPIC_OSYS, <<"$OP_SYS">>).      % op submit / status bus
 -define(DAP_TOPIC_OP_REQ, <<"OP_REQ">>).     % forwarded request inbox base: OP_REQ/<client-id>
 -define(DAP_TOPIC_OP_NOTIF, <<"OP_NOTIF">>). % requester notification base: OP_NOTIF/<client-id>
+% Operations over stock MQTT (paper Observation 2): a request broadcast to every
+% subscriber, answered on the requester's response topic
+-define(LEGACY_OP_REQUEST_TOPIC, <<"ps_bench/ops/request">>).
+-define(LEGACY_OP_RESPONSE_TOPIC, <<"ps_bench/ops/response">>).
 -define(DAP_OP_PURPOSE, <<"DAP_OP">>).       % operation-processing consent/purpose value
 -define(DAP_KEY_CONSENT, <<"DAP-Allow">>).
 -define(DAP_KEY_CLIENTID, <<"DAP-ClientID">>).
