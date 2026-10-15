@@ -1,0 +1,69 @@
+% Queuing-model cell: dap_dynamic_1s with QoS 1 data and slow subscribers (acks after 10 ms, at
+% most 10 in flight), so the broker queues and re-verifies.
+[
+    {name, dap_queue_dynamic_1s},
+    {duration, {60, seconds}},
+    {protocol, mqttv5},
+    {deployment_name, floor_40x1},
+    {hosts,
+    [
+        {floor1,                     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_predictive, [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_routine,    [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,     [{hostname, "127.0.0.1"}]}
+    ]},
+
+    {protocol_config,
+    [
+        {client_interface_module, ps_bench_dap_mqtt_interface},
+        {broker, "127.0.0.1"},
+        {port, 18883},
+        {qos,
+        [
+            {default_qos, 1}
+        ]},
+        %% Add/remove a single purpose on every client each 1s window.
+        {subscriber_ack_delay_ms, 10},
+        {subscriber_receive_maximum, 10},
+        {purpose_rotation_window_ms, 1000},
+        {rotation_toggle_purpose, "maintenance/routine"},
+        {device_purposes,
+        [
+            {machine_temperature_sensor, ["quality/assurance"]},
+            {machine_speed_sensor,       ["maintenance/{predictive,routine}"]},
+            {machine_energy_consumption, ["operations/forecast","regulatory/reporting"]},
+            {production_quality_sensor,  ["quality/assurance","operations/forecast","regulatory/reporting"]},
+            {vibration_sensor,           ["quality/assurance","maintenance/{predictive,routine}"]},
+            {robot_farmap,               ["vendor/maintenance"]},
+            {robot_nearmap,              ["vendor/maintenance"]},
+            {robot_imu,                  ["vendor/maintenance"]},
+            {robot_lidar,                ["vendor/maintenance"]},
+            {robot_odometry,             ["vendor/maintenance"]}
+        ]},
+        %% One subscriber per purpose (paper SS2.2 / SS7.3).
+        {node_subscription_purposes,
+        [
+            {sub_quality_assurance,      "quality/assurance"},
+            {sub_maintenance_predictive, "maintenance/predictive"},
+            {sub_maintenance_routine,    "maintenance/routine"},
+            {sub_operations_forecast,    "operations/forecast"},
+            {sub_regulatory_reporting,   "regulatory/reporting"},
+            {sub_vendor_maintenance,     "vendor/maintenance"}
+        ]}
+    ]},
+
+    {metric_config,
+    [
+        {output_dir, "results"},
+        {hw_stats_poll_period_ms, 1000},
+        {metric_plugins,
+        [
+            {ps_bench_throughput_calc_plugin, erlang},
+            {ps_bench_latency_calc_plugin, erlang},
+            {ps_bench_dropped_message_calc_plugin, erlang}
+        ]}
+    ]}
+].

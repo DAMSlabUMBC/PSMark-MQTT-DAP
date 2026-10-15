@@ -49,8 +49,9 @@ BROKER_NAME="psmark-matrix-broker"                  # ONLY container this script
 COOKIE="psmark_cookie"                              # must equal ?PS_BENCH_COOKIE
 GRACE_SECS=300                                      # connect+init+metrics overhead beyond scenario duration
 
-# ---- the matrix (Appendix B, Table 5; 55 cells) ------------------------------
-# group:scenario_name - dap = DAP broker on 18883, stock = stock broker on 18884.
+# ---- the matrix (Appendix B, Tables 5-6; 107 cells) -------------------------
+# group:scenario_name - dap = DAP broker on 18883, stock = stock broker on 18884,
+# dapnv = DAP broker with dap_send_verification false on 18883 (ablation).
 # The DAP 1x purpose datapoint REUSES dap_static_base (steady-state 40x1); it is
 # deliberately not a separate cell.
 CELLS=(
@@ -77,6 +78,24 @@ CELLS=(
   "dap:dap_full_dynamism_1s"  "dap:dap_full_dynamism_1s_2xdev"  "dap:dap_full_dynamism_1s_2srv"  "dap:dap_full_dynamism_1s_2srv_2x"
   "dap:dap_full_dynamism_5s"  "dap:dap_full_dynamism_5s_2xdev"  "dap:dap_full_dynamism_5s_2srv"  "dap:dap_full_dynamism_5s_2srv_2x"
   "dap:dap_full_dynamism_10s" "dap:dap_full_dynamism_10s_2xdev" "dap:dap_full_dynamism_10s_2srv" "dap:dap_full_dynamism_10s_2srv_2x"
+  # 6. Stock-MQTT twins of 3-5: topic-encoded purposes, broadcast operations (40)
+  "stock:topic_ops_i_audit_single"   "stock:topic_ops_i_audit_single_2xdev"   "stock:topic_ops_i_audit_single_2srv"   "stock:topic_ops_i_audit_single_2srv_2x"
+  "stock:topic_ops_ii_delete_single" "stock:topic_ops_ii_delete_single_2xdev" "stock:topic_ops_ii_delete_single_2srv" "stock:topic_ops_ii_delete_single_2srv_2x"
+  "stock:topic_ops_iii_audit_all"    "stock:topic_ops_iii_audit_all_2xdev"    "stock:topic_ops_iii_audit_all_2srv"    "stock:topic_ops_iii_audit_all_2srv_2x"
+  "stock:topic_ops_iv_delete_all"    "stock:topic_ops_iv_delete_all_2xdev"    "stock:topic_ops_iv_delete_all_2srv"    "stock:topic_ops_iv_delete_all_2srv_2x"
+  "stock:topic_dynamic_1s"  "stock:topic_dynamic_1s_2xdev"  "stock:topic_dynamic_1s_2srv"  "stock:topic_dynamic_1s_2srv_2x"
+  "stock:topic_dynamic_5s"  "stock:topic_dynamic_5s_2xdev"  "stock:topic_dynamic_5s_2srv"  "stock:topic_dynamic_5s_2srv_2x"
+  "stock:topic_dynamic_10s" "stock:topic_dynamic_10s_2xdev" "stock:topic_dynamic_10s_2srv" "stock:topic_dynamic_10s_2srv_2x"
+  "stock:topic_full_dynamism_1s"  "stock:topic_full_dynamism_1s_2xdev"  "stock:topic_full_dynamism_1s_2srv"  "stock:topic_full_dynamism_1s_2srv_2x"
+  "stock:topic_full_dynamism_5s"  "stock:topic_full_dynamism_5s_2xdev"  "stock:topic_full_dynamism_5s_2srv"  "stock:topic_full_dynamism_5s_2srv_2x"
+  "stock:topic_full_dynamism_10s" "stock:topic_full_dynamism_10s_2xdev" "stock:topic_full_dynamism_10s_2srv" "stock:topic_full_dynamism_10s_2srv_2x"
+  # 7. Queuing model: slow subscribers, with and without send verification (12)
+  "dap:dap_queue_dynamic_1s"        "dapnv:dap_queue_dynamic_1s_noverify"
+  "dap:dap_queue_dynamic_5s"        "dapnv:dap_queue_dynamic_5s_noverify"
+  "dap:dap_queue_dynamic_10s"       "dapnv:dap_queue_dynamic_10s_noverify"
+  "dap:dap_queue_full_dynamism_1s"  "dapnv:dap_queue_full_dynamism_1s_noverify"
+  "dap:dap_queue_full_dynamism_5s"  "dapnv:dap_queue_full_dynamism_5s_noverify"
+  "dap:dap_queue_full_dynamism_10s" "dapnv:dap_queue_full_dynamism_10s_noverify"
 )
 
 # ---- helpers ----------------------------------------------------------------
@@ -101,14 +120,16 @@ duration_secs_for() {  # scenario {duration,{N,Units}} -> seconds
     io:format(\"~b~n\",[S]), halt(0)."
 }
 
-broker_port_for() { case "$1" in dap) echo "${DAP_HOST_PORT}";; *) echo "${STOCK_HOST_PORT}";; esac }
+broker_port_for() { case "$1" in dap|dapnv) echo "${DAP_HOST_PORT}";; *) echo "${STOCK_HOST_PORT}";; esac }
 
 start_broker() {  # start_broker <group>
   local group="$1"
   case "${group}" in
-    dap)
+    dap|dapnv)
+      local conf=mosquitto-dap.conf
+      [ "${group}" = dapnv ] && conf=mosquitto-dap-noverify.conf
       docker run -d --rm --name "${BROKER_NAME}" -p "127.0.0.1:${DAP_HOST_PORT}:1883" \
-        -v "${CONTAINER_CONFIG_DIR}/mosquitto-dap.conf:/etc/mosquitto/mosquitto.conf:ro" \
+        -v "${CONTAINER_CONFIG_DIR}/${conf}:/etc/mosquitto/mosquitto.conf:ro" \
         "${DAP_BROKER_IMAGE}" >/dev/null ;;
     stock)
       docker run -d --rm --name "${BROKER_NAME}" -p "127.0.0.1:${STOCK_HOST_PORT}:1883" \
@@ -251,7 +272,7 @@ for img in "${DAP_BROKER_IMAGE}" "${STOCK_BROKER_IMAGE}"; do
   docker image inspect "${img}" >/dev/null 2>&1 \
     || { echo "PRE-RUN FAIL: broker image '${img}' not found locally" >&2; exit 1; }
 done
-for conf in mosquitto-dap.conf mosquitto-stock.conf; do
+for conf in mosquitto-dap.conf mosquitto-dap-noverify.conf mosquitto-stock.conf; do
   [ -f "${CONTAINER_CONFIG_DIR}/${conf}" ] \
     || { echo "PRE-RUN FAIL: missing ${CONTAINER_CONFIG_DIR}/${conf}" >&2; exit 1; }
 done
