@@ -337,4 +337,6 @@ for pass in $(seq 1 "${PASSES}"); do
   log "=== PASS ${pass}/${PASSES} COMPLETE ==="
 done
 
+python3 "${SCRIPT_DIR}/dap_metrics_summary.py" "${RESULTS_ROOT}" > "${RESULTS_ROOT}/dap_metrics_summary.csv" \
+  || log "dap_metrics_summary.py failed"
 log "Matrix run finished."
