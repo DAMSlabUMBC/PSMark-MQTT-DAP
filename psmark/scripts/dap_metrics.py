@@ -16,7 +16,9 @@ present, the broker's per-message metrics (broker_metrics.csv in the cell direct
 
   Operational correctness: coverage (relevant subscribers that got the request),
   leakage (non-relevant subscribers that got it) and completion (requests whose
-  requester got a final Success or Failure). A subscriber is relevant to a request
+  requester got a final Success or Failure; over stock MQTT, where requests are
+  broadcast and no broker answers, every relevant subscriber's answer within the
+  deadline). A subscriber is relevant to a request
   if it received data from the requester under an SP sharing a purpose with the
   request's DAP-OpPFs (paper 6.1); PSMark scopes every operation to the requester's
   own topics and MPs. Coverage counts subscribers that had such data before the
@@ -117,15 +119,25 @@ def read_rows(pattern):
             yield from csv.DictReader(fh)
 
 
+def plain_topic(topic):
+    """A topic without the topic-encoded baseline's /[purpose] suffix."""
+    return topic.rsplit("/[", 1)[0] if topic.endswith("]") else topic
+
+
 def load(cell):
     raw = f"{cell}/nodes/*/results/*/raw_events"
     pubs = {}
     for r in read_rows(f"{raw}/*_pub_events.csv"):
         pubs[(name(r["SenderID"]), name(r["Topic"]), r["SeqId"])] = (name(r["SendingClient"]), int(r.get("PubTimeNs") or 0))
-    recvs = []
+    # Topic encoding delivers one copy per matching purpose topic: count the first.
+    recvs, seen = [], set()
     for r in read_rows(f"{raw}/*_recv_events.csv"):
-        recvs.append((name(r["ReceiverID"]), name(r["ReceivingClient"]), (name(r["SenderID"]), name(r["Topic"]), r["SeqId"]),
-                      int(r["PubTimeNs"]), int(r["RecvTimeNs"])))
+        key = (name(r["SenderID"]), plain_topic(name(r["Topic"])), r["SeqId"])
+        sub = name(r["ReceivingClient"])
+        if (sub, key) in seen:
+            continue
+        seen.add((sub, key))
+        recvs.append((name(r["ReceiverID"]), sub, key, int(r["PubTimeNs"]), int(r["RecvTimeNs"])))
     events = sorted(({**r, "TimeNs": int(r["TimeNs"])} for r in read_rows(f"{raw}/*_dap_events.csv")),
                     key=lambda r: r["TimeNs"])
     return pubs, recvs, events
@@ -270,6 +282,9 @@ def operations(pubs, recvs, events):
         i = bisect.bisect_right(times, t)
         return times[i - 1] if i else t
 
+    if not any(e["Event"] == "op_notification" and e["Sender"] == "Broker" for e in events):
+        return broadcast_operations(issued, events, node_of, subscribers, data, surely_relevant, op_pfs)
+
     pending, final_ids, finals, audits = {}, set(), 0, []
     for e in events:
         if e["Event"] != "op_notification" or e["Sender"] != "Broker":
@@ -326,6 +341,50 @@ def operations(pubs, recvs, events):
         "leaked": leaked,
         "audits": len(audits),
         "audits_listing_relevant": audit_ok,
+    }
+
+
+DEADLINE_NS = 30 * 10**9
+
+
+def broadcast_operations(issued, events, node_of, subscribers, data, surely_relevant, op_pfs):
+    """Operations over stock MQTT: requests carry the requester's own id and every
+    subscriber gets them; only the requester's subscribers' answers can complete one."""
+    requests, answered = defaultdict(set), defaultdict(dict)
+    leaked = 0
+    issuer_of = {e["OpId"]: e["Client"] for e in issued}
+    for e in events:
+        if e["Event"] == "op_request" and e["OpId"] in issuer_of:
+            sub = node_of.get(e["Client"], e["Client"])
+            requests[e["OpId"]].add(sub)
+            if not any(tr < e["TimeNs"] for tr, _, _ in data.get((issuer_of[e["OpId"]], sub), ())):
+                leaked += 1
+        elif e["Event"] == "op_notification" and e["OpId"] in issuer_of and e["Status"] == "Success":
+            sub = node_of.get(e["Sender"], e["Sender"])
+            answered[e["OpId"]].setdefault(sub, e["TimeNs"])
+    covered = relevant_slots = other_slots = completed = 0
+    for e in issued:
+        rel = surely_relevant(e["Client"], e["TimeNs"], op_pfs.get((e["Client"], e["TimeNs"])))
+        covered += len(rel & requests[e["OpId"]])
+        relevant_slots += len(rel)
+        other_slots += len(subscribers - rel)
+        completed += all(answered[e["OpId"]].get(s, float("inf")) <= e["TimeNs"] + DEADLINE_NS for s in rel)
+    by_type = defaultdict(int)
+    for e in issued:
+        by_type[e["OpType"]] += 1
+    return {
+        "issued": len(issued),
+        "by_type": dict(by_type),
+        "requesters": len({e["Client"] for e in issued}),
+        "completed": completed,
+        "completion_pct": 100.0 * completed / len(issued),
+        "pending_at_end": 0,
+        "coverage_pct": 100.0 * covered / relevant_slots if relevant_slots else None,
+        "relevant_slots": relevant_slots,
+        "leakage_pct": 100.0 * leaked / other_slots if other_slots else 0.0,
+        "leaked": leaked,
+        "audits": 0,
+        "audits_listing_relevant": 0,
     }
 
 
