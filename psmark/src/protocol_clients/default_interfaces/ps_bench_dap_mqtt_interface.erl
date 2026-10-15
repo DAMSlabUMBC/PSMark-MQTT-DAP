@@ -360,17 +360,21 @@ start_client_link(ClientName, CleanStart, OwnerPid) ->
     {ok, BrokerIP, BrokerPort} = ps_bench_config_manager:fetch_mqtt_broker_information(),
     {ok, Protocol} = ps_bench_config_manager:fetch_protocol_type(),
 
+    {AckDelayMs, ConnectProps} = consumer_settings(),
+
     % Configure properties
     PropList = [
         {host, BrokerIP},
         {port, BrokerPort},
         {clientid, ClientName},
         {clean_start, CleanStart},
-        %% Keep the session across a device's simulated disconnects, so operation
-        %% requests and notifications sent meanwhile are delivered on reconnect.
-        {properties, #{'Session-Expiry-Interval' => ?DAP_SESSION_EXPIRY_SECS}},
+        {properties, ConnectProps},
+        {auto_ack, AckDelayMs =:= 0},
         {msg_handler, #{disconnected => fun(Reason) -> disconnect_event(OwnerPid, Reason, ClientName) end,
-                        publish => fun(Msg) -> publish_event(OwnerPid, Msg, ClientName) end}}
+                        publish => fun(Msg) ->
+                                       publish_event(OwnerPid, Msg, ClientName),
+                                       delayed_ack(AckDelayMs, Msg)
+                                   end}}
     ],
 
     % Start the client process
@@ -422,6 +426,31 @@ disconnect_event(OwnerPid, Reason, ClientName) ->
     % Forward required event information to the adapter
     TimeNs = erlang:system_time(nanosecond),
     OwnerPid ! {?DISCONNECTED_MSG, {TimeNs, Reason}, ClientName},
+    ok.
+
+%% The session is kept across a device's simulated disconnects, so operation
+%% requests and notifications sent meanwhile are delivered on reconnect. A subscriber
+%% node may also consume slowly (subscriber_ack_delay_ms, subscriber_receive_maximum),
+%% so the broker queues for it.
+consumer_settings() ->
+    Props = #{'Session-Expiry-Interval' => ?DAP_SESSION_EXPIRY_SECS},
+    case ps_bench_config_manager:fetch_role_for_this_node() of
+        {ok, ?DEPLOYMENT_ROLE_SUBSCRIBER} ->
+            {ok, AckDelayMs} = ps_bench_config_manager:fetch_mqtt_subscriber_ack_delay_ms(),
+            {ok, ReceiveMax} = ps_bench_config_manager:fetch_mqtt_subscriber_receive_maximum(),
+            {AckDelayMs, case ReceiveMax of
+                             0 -> Props;
+                             _ -> Props#{'Receive-Maximum' => ReceiveMax}
+                         end};
+        _ ->
+            {0, Props}
+    end.
+
+%% Runs in the emqtt client process, so self() is the client to acknowledge through.
+delayed_ack(AckDelayMs, #{qos := 1, packet_id := PacketId}) when AckDelayMs > 0 ->
+    {ok, _} = timer:apply_after(AckDelayMs, emqtt, puback, [self(), PacketId]),
+    ok;
+delayed_ack(_AckDelayMs, _Msg) ->
     ok.
 
 publish_event(OwnerPid, Msg = #{topic := Topic, payload := Payload}, ClientName) ->

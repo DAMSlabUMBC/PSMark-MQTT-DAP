@@ -159,6 +159,10 @@
 % The paper's operation cells use 1000 (cases i/ii: every 1 s) and the
 % full-dynamism cells reuse the rotation interval.
 -define(MQTT_OP_ISSUE_INTERVAL_PROP, op_issue_interval_ms).
+% Slow subscribers, to build broker-side queues: QoS 1 acks delayed by this many
+% ms, and at most this many messages in flight to each subscriber (0 = unset)
+-define(MQTT_SUB_ACK_DELAY_PROP, subscriber_ack_delay_ms).
+-define(MQTT_SUB_RECEIVE_MAX_PROP, subscriber_receive_maximum).
 
 % Operation ISSUER MODE selects WHO issues operations each interval. Both modes
 % scope the operation to the ISSUER's OWN topic/purpose (DAP-OpTFs/OpPFs); they
