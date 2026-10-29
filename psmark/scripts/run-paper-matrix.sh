@@ -40,6 +40,7 @@ CONFIG_ROOT="${PS_BENCH_DIR}/configs/builtin-test-suites"
 SCEN_ROOT="${CONFIG_ROOT}/testcases/experiments"
 RESULTS_ROOT="${RUN_DIR}/results/paper_matrix"
 PROGRESS_LOG="${RESULTS_ROOT}/matrix_progress.log"
+CONTAINER_METRICS_PATH="/tmp/dap_broker_metrics.csv"
 
 DAP_BROKER_IMAGE="mqtt-dap-mosquitto:develop"      # built from mqtt-dap-mosquitto develop (>= 0ba79c81)
 STOCK_BROKER_IMAGE="eclipse-mosquitto:2"
@@ -243,6 +244,9 @@ EOF
     fi
     sleep 1
   done
+
+  docker cp ${BROKER_NAME}:${CONTAINER_METRICS_PATH} "${cell_dir}/broker_internal_stats_${cell}_${pass}.csv"
+
   for pid in "${pids[@]}"; do
     if ! wait "${pid}"; then fail=1; fi
   done
