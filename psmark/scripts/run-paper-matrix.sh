@@ -42,12 +42,20 @@ RESULTS_ROOT="${RUN_DIR}/results/paper_matrix"
 PROGRESS_LOG="${RESULTS_ROOT}/matrix_progress.log"
 
 DAP_BROKER_IMAGE="mqtt-dap-mosquitto:develop"      # built from mqtt-dap-mosquitto develop (>= 0ba79c81)
-STOCK_BROKER_IMAGE="eclipse-mosquitto:2.0"
+STOCK_BROKER_IMAGE="eclipse-mosquitto:2"
 DAP_HOST_PORT=18883                                 # matches {port, 18883} in DAP scenarios
 STOCK_HOST_PORT=18884                               # matches {port, 18884} in baseline scenarios
 BROKER_NAME="psmark-matrix-broker"                  # ONLY container this script ever stops
 COOKIE="psmark_cookie"                              # must equal ?PS_BENCH_COOKIE
 GRACE_SECS=300                                      # connect+init+metrics overhead beyond scenario duration
+
+DOCKER_STATS_HEADER="TIME,NAME,CPU %,MEM USAGE / LIMIT,MEM %,NET I/O,BLOCK I/O"
+DOCKER_DB_HEADER="TIME,DAP DB BYTES"
+DOCKER_STATS_CMD="docker container stats --no-stream --format {{.Name}},{{.CPUPerc}},{{.MemUsage}},{{.MemPerc}},{{.NetIO}},{{.BlockIO}} ${BROKER_NAME}"
+DATABASE_CMD="sqlite3"
+DATABASE_PATH="/tmp/mosquitto.sqlite3"
+DATABASE_SIZE_QUERY="select SUM(\"pgsize\") FROM \"dbstat\" WHERE name LIKE 'dap_%';"
+DOCKER_DATABASE_CMD="docker exec -it $BROKER_NAME $DATABASE_CMD $DATABASE_PATH \"$DATABASE_SIZE_QUERY\""
 
 # ---- the matrix (Appendix B, Table 5; 55 cells) ------------------------------
 # group:scenario_name - dap = DAP broker on 18883, stock = stock broker on 18884.
@@ -150,7 +158,7 @@ stop_broker() {  # stop_broker <cell_dir> ; capture logs first, record teardown 
 # the real node names and the lifecycle barriers connect. Each node gets its own
 # workdir (own sys.config, out/, results/, Mnesia.<node> dir - no collisions).
 run_cell_native() {  # run_cell_native <group> <cell> <cell_dir> -> 0 ok / 1 fail
-  local group="$1" cell="$2" cell_dir="$3"
+  local group="$1" cell="$2" cell_dir="$3" pass="$4"
   local scenario_file scenario_dir nodes dur deadline
   scenario_file=$(scenario_file_for "${cell}")
   mapfile -t nodes < <(node_names_for "${scenario_file}")
@@ -210,7 +218,19 @@ EOF
   # Wait for every beam, bounded by duration + grace; on timeout kill OUR pids.
   deadline=$(( $(date +%s) + dur + GRACE_SECS ))
   local fail=0 alive
+
+  echo $DOCKER_STATS_HEADER > "${cell_dir}/broker_container_stats_${cell}_${pass}.csv"
+  echo $DOCKER_DB_HEADER > "${cell_dir}/broker_db_stats_${cell}_${pass}.csv"
   while :; do
+
+    CURR_DATE=`date +%s`
+
+    # Take docker stats
+    echo "$CURR_DATE,`$DOCKER_STATS_CMD`" > temp_record.csv && cat temp_record.csv >> "${cell_dir}/broker_container_stats_${cell}_${pass}.csv"
+
+    # Take DB stats
+    echo "$CURR_DATE,`eval $DOCKER_DATABASE_CMD`" > temp_record.csv && cat temp_record.csv >> "${cell_dir}/broker_db_stats_${cell}_${pass}.csv"
+
     alive=0
     for pid in "${pids[@]}"; do kill -0 "${pid}" 2>/dev/null && alive=$((alive+1)); done
     [ "${alive}" -eq 0 ] && break
@@ -221,7 +241,7 @@ EOF
       for pid in "${pids[@]}"; do kill -9 "${pid}" 2>/dev/null || true; done
       fail=1; break
     fi
-    sleep 5
+    sleep 1
   done
   for pid in "${pids[@]}"; do
     if ! wait "${pid}"; then fail=1; fi
@@ -297,7 +317,7 @@ for pass in $(seq 1 "${PASSES}"); do
 
     log "pass ${pass} cell ${cell}: RUN START"
     cell_rc=0
-    run_cell_native "${group}" "${cell}" "${cell_dir}" || cell_rc=$?
+    run_cell_native "${group}" "${cell}" "${cell_dir}" "${pass}" || cell_rc=$?
 
     stop_broker "${cell_dir}" || { log "pass ${pass} cell ${cell}: broker teardown FAILED - aborting run"; exit 1; }
 
