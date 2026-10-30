@@ -44,7 +44,7 @@ CONTAINER_METRICS_PATH="/tmp/dap_broker_metrics.csv"
 CONTAINER_STATS_PATH="/tmp/dap_broker_stats.csv"
 
 DAP_BROKER_IMAGE="mqtt-dap-mosquitto:develop"      # built from mqtt-dap-mosquitto develop (>= 0ba79c81)
-STOCK_BROKER_IMAGE="eclipse-mosquitto:2"
+STOCK_BROKER_IMAGE="mosquitto-stock-instrumented:2.1.2"  # mosquitto-stock-instrumented, Dockerfile.instrumented
 DAP_HOST_PORT=18883                                 # matches {port, 18883} in DAP scenarios
 STOCK_HOST_PORT=18884                               # matches {port, 18884} in baseline scenarios
 BROKER_NAME="psmark-matrix-broker"                  # ONLY container this script ever stops
@@ -57,7 +57,7 @@ DOCKER_STATS_CMD="docker container stats --no-stream --format {{.Name}},{{.CPUPe
 DATABASE_CMD="sqlite3"
 DATABASE_PATH="/tmp/mosquitto.sqlite3"
 DATABASE_SIZE_QUERY="select SUM(\"pgsize\") FROM \"dbstat\" WHERE name LIKE 'dap_%';"
-DOCKER_DATABASE_CMD="docker exec -it $BROKER_NAME $DATABASE_CMD $DATABASE_PATH \"$DATABASE_SIZE_QUERY\""
+DOCKER_DATABASE_CMD="docker exec -i $BROKER_NAME $DATABASE_CMD $DATABASE_PATH \"$DATABASE_SIZE_QUERY\""
 
 # ---- the matrix (Appendix B, Table 5; 55 cells) ------------------------------
 # group:scenario_name - dap = DAP broker on 18883, stock = stock broker on 18884.
