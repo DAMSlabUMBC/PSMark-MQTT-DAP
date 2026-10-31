@@ -44,7 +44,8 @@ CONTAINER_METRICS_PATH="/tmp/dap_broker_metrics.csv"
 CONTAINER_STATS_PATH="/tmp/dap_broker_stats.csv"
 
 DAP_BROKER_IMAGE="mqtt-dap-mosquitto:develop"      # built from mqtt-dap-mosquitto develop (>= 0ba79c81)
-STOCK_BROKER_IMAGE="eclipse-mosquitto:2"
+#STOCK_BROKER_IMAGE="eclipse-mosquitto:2"
+STOCK_BROKER_IMAGE="mosquitto-stats:2.1-alpine"
 DAP_HOST_PORT=18883                                 # matches {port, 18883} in DAP scenarios
 STOCK_HOST_PORT=18884                               # matches {port, 18884} in baseline scenarios
 BROKER_NAME="psmark-matrix-broker"                  # ONLY container this script ever stops
