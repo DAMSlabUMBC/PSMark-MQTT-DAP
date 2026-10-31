@@ -125,9 +125,7 @@ start_broker() {  # start_broker <group>
         -v "${CONTAINER_CONFIG_DIR}/mosquitto-stock.conf:/mosquitto/config/mosquitto.conf:ro" \
         "${STOCK_BROKER_IMAGE}" >/dev/null ;;
   esac
-  # Wait (30 s) for the broker's own "running" line: docker's port proxy accepts
-  # TCP before the broker has finished loading persistence, so a bare port probe
-  # passes too early and the first clients get dropped.
+  # Wait (30 s) for the broker's "running" line; the port opens before it's ready.
   local port; port=$(broker_port_for "${group}")
   for _ in $(seq 1 30); do
     if docker logs "${BROKER_NAME}" 2>&1 | grep -qE "mosquitto version [0-9.]+ running" \
@@ -249,8 +247,7 @@ EOF
     sleep 1
   done
 
-  # The per-message metrics file only exists when the DAP broker runs with
-  # dap_message_metrics true; the 100ms stats file is written by both brokers.
+  # Per-message metrics only exist on DAP with dap_message_metrics true.
   if [ "${group}" = "dap" ]; then
     docker cp "${BROKER_NAME}:${CONTAINER_METRICS_PATH}" "${cell_dir}/broker_internal_metrics_${cell}_${pass}.csv" >/dev/null 2>&1 || true
   fi
