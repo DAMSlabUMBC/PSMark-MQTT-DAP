@@ -249,12 +249,8 @@ EOF
     sleep 1
   done
 
-  # Per-message metrics only exist on DAP with dap_message_metrics true.
-  if [ "${group}" = "dap" ]; then
-    docker cp "${BROKER_NAME}:${CONTAINER_METRICS_PATH}" "${cell_dir}/broker_internal_metrics_${cell}_${pass}.csv" >/dev/null 2>&1 || true
-  fi
-  docker cp "${BROKER_NAME}:${CONTAINER_STATS_PATH}" "${cell_dir}/broker_internal_stats_${cell}_${pass}.csv" >/dev/null 2>&1 \
-    || log "cell ${cell}: WARNING - no broker stats file in container"
+  docker cp "${BROKER_NAME}:${CONTAINER_METRICS_PATH}" "${cell_dir}/broker_internal_metrics_${cell}_${pass}.csv" >/dev/null 2>&1 || log "cell ${cell}: WARNING - no broker metrics file in container"
+  docker cp "${BROKER_NAME}:${CONTAINER_STATS_PATH}" "${cell_dir}/broker_internal_stats_${cell}_${pass}.csv" >/dev/null 2>&1 || log "cell ${cell}: WARNING - no broker stats file in container"
 
   for pid in "${pids[@]}"; do
     if ! wait "${pid}"; then fail=1; fi
