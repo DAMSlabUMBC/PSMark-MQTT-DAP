@@ -7,7 +7,7 @@
 -export([start_link/3]).
 
 %% exported for eunit
--export([purpose_scoped_filters/2]).
+-export([purpose_scoped_filters/2, should_subscribe/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3,
@@ -28,7 +28,8 @@ init({ScenarioName, RegName, OwnerPid}) ->
     {ok, VariantCount} = ps_bench_config_manager:fetch_mqtt_purpose_variant_count(),
     {ok, FanoutModel} = ps_bench_config_manager:fetch_mqtt_purpose_fanout_model(),
     {ok, NodePurpose} = resolve_node_purpose(),
-    {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, purpose_map => PurposeMap, variant_count => VariantCount, fanout_model => FanoutModel, node_purpose => NodePurpose}}.
+    {ok, SubscribeUnscoped} = ps_bench_config_manager:fetch_mqtt_subscribe_unscoped_nodes(),
+    {ok, #{subscribe_unscoped => SubscribeUnscoped, scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, purpose_map => PurposeMap, variant_count => VariantCount, fanout_model => FanoutModel, node_purpose => NodePurpose}}.
 
 %% Per-node consumer purpose for the topic-encoded baseline (paper SS2.2 /
 %% SS7.3: one subscriber per purpose, mirroring the DAP cells). Reuses the
@@ -56,10 +57,13 @@ handle_call(connect_clean, _From, State) ->
 handle_call(reconnect, _From, State) ->
     do_connect(true, State);
 
-handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected, node_purpose := NodePurpose}) when Connected == true ->
+handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected, node_purpose := NodePurpose, subscribe_unscoped := SubscribeUnscoped}) when Connected == true ->
     %% Purpose-scoped consumers subscribe ONLY to their purpose's encoded
     %% topics; unscoped nodes keep the wildcard topics they were given.
-    _ = emqtt:subscribe(ClientPid, Properties, purpose_scoped_filters(NodePurpose, Topics)),
+    case should_subscribe(NodePurpose, SubscribeUnscoped) of
+        true -> _ = emqtt:subscribe(ClientPid, Properties, purpose_scoped_filters(NodePurpose, Topics));
+        false -> ok
+    end,
     {reply, ok, State};
 
 handle_call({subscribe, _Properties, _Topics}, _From, State = #{connected := Connected}) when Connected == false ->
@@ -223,6 +227,11 @@ ensure_emqtt_started() ->
 %% braces in the purpose, e.g. the scaling suffixes, expand to one filter per
 %% variant exactly like the publisher fan-out). undefined = unscoped node:
 %% topics pass through untouched. Non-wildcard topics also pass through.
+%% A publisher node (no purpose) takes no copy of the data when the scenario
+%% turns unscoped subscriptions off, matching the DAP cells' traffic.
+should_subscribe(undefined, SubscribeUnscoped) -> SubscribeUnscoped;
+should_subscribe(_NodePurpose, _SubscribeUnscoped) -> true.
+
 purpose_scoped_filters(undefined, Topics) ->
     Topics;
 purpose_scoped_filters(PurposeBin, Topics) when is_binary(PurposeBin) ->
