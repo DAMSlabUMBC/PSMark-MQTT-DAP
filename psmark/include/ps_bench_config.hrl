@@ -147,6 +147,7 @@
 -define(DAP_KEY_OPID, <<"DAP-OpId">>).
 -define(DAP_KEY_OPTFS, <<"DAP-OpTFs">>).
 -define(DAP_KEY_OPPFS, <<"DAP-OpPFs">>).
+-define(DAP_KEY_OPPARAM, <<"DAP-OpParam">>).
 -define(DAP_KEY_STATUS, <<"DAP-Status">>).
 -define(DAP_KEY_REASON, <<"DAP-Reason">>).
 -define(DAP_ALLOW_ALL_FILTER, <<"*">>).      % MOSQ_DAP_ALLOW_ALL_FILTER
