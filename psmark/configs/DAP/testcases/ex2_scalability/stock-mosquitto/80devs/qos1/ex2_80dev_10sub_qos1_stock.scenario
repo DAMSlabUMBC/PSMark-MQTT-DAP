@@ -1,0 +1,41 @@
+[
+    {name, ex2_80dev_10sub_qos1_stock},
+    {duration, {60, seconds}},
+    {protocol, mqttv5},
+    {deployment_name, floor_80x1_10sub},
+    {hosts,
+    [
+        {floor1,                     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance,            [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance2,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance2,            [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast2,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting2,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance2,     [{hostname, "127.0.0.1"}]},
+    ]},
+
+    {protocol_config,
+    [
+        {broker, "127.0.0.1"},
+        {port, 18884},
+        {qos,
+        [
+            {default_qos, 1}
+        ]}
+    ]},
+
+    {metric_config,
+    [
+        {output_dir, "results"},
+        {metric_plugins,
+        [
+            {ps_bench_throughput_calc_plugin, erlang},
+            {ps_bench_latency_calc_plugin, erlang},
+            {ps_bench_dropped_message_calc_plugin, erlang}
+        ]}
+    ]}
+].

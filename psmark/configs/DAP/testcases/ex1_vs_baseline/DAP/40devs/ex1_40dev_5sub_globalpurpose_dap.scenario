@@ -1,0 +1,59 @@
+[
+    {name, ex1_40dev_5sub_globalpurpose_dap},
+    {duration, {60, seconds}},
+    {protocol, mqttv5},
+    {deployment_name, floor_40x1_5sub},
+    {hosts,
+    [
+        {floor1,                     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance,            [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,     [{hostname, "127.0.0.1"}]}
+    ]},
+
+    {protocol_config,
+    [
+        {client_interface_module, ps_bench_dap_mqtt_interface},
+        {broker, "127.0.0.1"},
+        {port, 18883},
+        {qos,
+        [
+            {default_qos, 0}
+        ]},
+        {device_purposes,
+        [
+            {machine_temperature_sensor, ["allprocessing"]},
+            {machine_speed_sensor,       ["allprocessing"]},
+            {machine_energy_consumption, ["allprocessing"]},
+            {production_quality_sensor,  ["allprocessing"]},
+            {vibration_sensor,           ["allprocessing"]},
+            {robot_farmap,               ["allprocessing"]},
+            {robot_nearmap,              ["allprocessing"]},
+            {robot_imu,                  ["allprocessing"]},
+            {robot_lidar,                ["allprocessing"]},
+            {robot_odometry,             ["allprocessing"]}
+        ]},
+
+        {node_subscription_purposes,
+        [
+            {sub_quality_assurance,      "allprocessing"},
+            {sub_maintenance,            "allprocessing"},
+            {sub_operations_forecast,    "allprocessing"},
+            {sub_regulatory_reporting,   "allprocessing"},
+            {sub_vendor_maintenance,     "allprocessing"}
+        ]}
+    ]},
+
+    {metric_config,
+    [
+        {output_dir, "results"},
+        {metric_plugins,
+        [
+            {ps_bench_throughput_calc_plugin, erlang},
+            {ps_bench_latency_calc_plugin, erlang},
+            {ps_bench_dropped_message_calc_plugin, erlang}
+        ]}
+    ]}
+].

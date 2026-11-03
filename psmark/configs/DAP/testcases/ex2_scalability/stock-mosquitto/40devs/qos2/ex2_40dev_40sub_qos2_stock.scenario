@@ -1,0 +1,71 @@
+[
+    {name, ex2_40dev_40sub_qos2_stock},
+    {duration, {60, seconds}},
+    {protocol, mqttv5},
+    {deployment_name, floor_40x1_40sub},
+    {hosts,
+    [
+        {floor1,                    [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,     [{hostname, "127.0.0.1"}]},
+        {sub_maintenance,           [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,   [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,  [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,    [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance2,    [{hostname, "127.0.0.1"}]},
+        {sub_maintenance2,          [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast2,  [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting2, [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance2,   [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance3,    [{hostname, "127.0.0.1"}]},
+        {sub_maintenance3,          [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast3,  [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting3, [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance3,   [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance4,    [{hostname, "127.0.0.1"}]},
+        {sub_maintenance4,          [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast4,  [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting4, [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance4,   [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance5,    [{hostname, "127.0.0.1"}]},
+        {sub_maintenance5,          [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast5,  [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting5, [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance5,   [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance6,    [{hostname, "127.0.0.1"}]},
+        {sub_maintenance6,          [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast6,  [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting6, [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance6,   [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance7,    [{hostname, "127.0.0.1"}]},
+        {sub_maintenance7,          [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast7,  [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting7, [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance7,   [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance8,    [{hostname, "127.0.0.1"}]},
+        {sub_maintenance8,          [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast8,  [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting8, [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance8,   [{hostname, "127.0.0.1"}]}
+    ]},
+
+    {protocol_config,
+    [
+        {broker, "127.0.0.1"},
+        {port, 18884},
+        {qos,
+        [
+            {default_qos, 2}
+        ]}
+    ]},
+
+    {metric_config,
+    [
+        {output_dir, "results"},
+        {metric_plugins,
+        [
+            {ps_bench_throughput_calc_plugin, erlang},
+            {ps_bench_latency_calc_plugin, erlang},
+            {ps_bench_dropped_message_calc_plugin, erlang}
+        ]}
+    ]}
+].

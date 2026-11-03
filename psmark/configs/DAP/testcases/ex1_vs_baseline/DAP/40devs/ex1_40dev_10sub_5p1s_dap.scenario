@@ -1,0 +1,74 @@
+[
+    {name, ex1_40dev_10sub_5p1s_dap},
+    {duration, {60, seconds}},
+    {protocol, mqttv5},
+    {deployment_name, floor_40x1_10sub},
+    {hosts,
+    [
+        {floor1,                     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance,            [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance2,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance2,            [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast2,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting2,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance2,     [{hostname, "127.0.0.1"}]}
+    ]},
+
+    {protocol_config,
+    [
+        {client_interface_module, ps_bench_dap_mqtt_interface},
+        {broker, "127.0.0.1"},
+        {port, 18883},
+        {qos,
+        [
+            {default_qos, 0}
+        ]},
+        {device_purposes,
+        [
+            {machine_temperature_sensor, ["quality/1", "maintenance/predictive/1", "forecasting/1", "reporting/1", "support/1"]},
+            {machine_speed_sensor,       ["quality/2", "maintenance/predictive/2", "forecasting/2", "reporting/2", "support/2"]},
+            {machine_energy_consumption, ["quality/1", "maintenance/predictive/1", "forecasting/1", "reporting/1", "support/1"]},
+            {production_quality_sensor,  ["quality/2", "maintenance/predictive/2", "forecasting/2", "reporting/2", "support/2"]},
+            {vibration_sensor,           ["quality/1", "maintenance/predictive/1", "forecasting/1", "reporting/1", "support/1"]},
+            {robot_farmap,               ["quality/2", "maintenance/predictive/2", "forecasting/2", "reporting/2", "support/2"]},
+            {robot_nearmap,              ["quality/2", "maintenance/predictive/2", "forecasting/2", "reporting/2", "support/2"]},
+            {robot_imu,                  ["quality/1", "maintenance/predictive/1", "forecasting/1", "reporting/1", "support/1"]},
+            {robot_lidar,                ["quality/1", "maintenance/predictive/1", "forecasting/1", "reporting/1", "support/1"]},
+            {robot_odometry,             ["quality/2", "maintenance/predictive/2", "forecasting/2", "reporting/2", "support/2"]},
+            {machine_temperature_sensor2, ["quality/2", "maintenance/predictive/2", "forecasting/2", "reporting/2", "support/2"]},
+            {machine_speed_sensor2,       ["quality/1", "maintenance/predictive/1", "forecasting/1", "reporting/1", "support/1"]},
+            {machine_energy_consumption2, ["quality/1", "maintenance/predictive/1", "forecasting/1", "reporting/1", "support/1"]},
+            {production_quality_sensor2,  ["quality/2", "maintenance/predictive/2", "forecasting/2", "reporting/2", "support/2"]},
+            {vibration_sensor2,           ["quality/2", "maintenance/predictive/2", "forecasting/2", "reporting/2", "support/2"]}
+        ]},
+
+        {node_subscription_purposes,
+        [
+            {sub_quality_assurance,      "quality/1"},
+            {sub_maintenance,            "maintenance/predictive/1"},
+            {sub_operations_forecast,    "forecasting/1"},
+            {sub_regulatory_reporting,   "reporting/1"},
+            {sub_vendor_maintenance,     "support/1"},
+            {sub_quality_assurance2,     "quality/2"},
+            {sub_maintenance2,           "maintenance/predictive/2"},
+            {sub_operations_forecast2,   "forecasting/2"},
+            {sub_regulatory_reporting2,  "reporting/2"},
+            {sub_vendor_maintenance2,    "support/2"}
+        ]}
+    ]},
+
+    {metric_config,
+    [
+        {output_dir, "results"},
+        {metric_plugins,
+        [
+            {ps_bench_throughput_calc_plugin, erlang},
+            {ps_bench_latency_calc_plugin, erlang},
+            {ps_bench_dropped_message_calc_plugin, erlang}
+        ]}
+    ]}
+].

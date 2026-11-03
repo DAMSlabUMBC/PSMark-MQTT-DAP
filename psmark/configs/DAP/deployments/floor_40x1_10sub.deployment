@@ -1,0 +1,38 @@
+[
+    {name, floor_40x1_10sub},
+    {nodes,
+    [
+        {floor1,
+        [
+            {devices,
+            [
+                % Allow even device split among subscribers
+                {machine_temperature_sensor, 4},
+                {machine_temperature_sensor2, 2},
+                {machine_speed_sensor, 4},
+                {machine_speed_sensor2, 2},
+                {machine_energy_consumption, 4},
+                {machine_energy_consumption2, 2},
+                {production_quality_sensor, 4},
+                {production_quality_sensor2, 2},
+                {vibration_sensor, 4},
+                {vibration_sensor2, 2},
+                {robot_farmap, 2},
+                {robot_nearmap, 2},
+                {robot_imu, 2},
+                {robot_lidar, 2},
+                {robot_odometry, 2}
+            ]}
+        ]},
+        {sub_quality_assurance,     [{role, subscriber}, {devices, []}]},
+        {sub_maintenance,           [{role, subscriber}, {devices, []}]},
+        {sub_operations_forecast,   [{role, subscriber}, {devices, []}]},
+        {sub_regulatory_reporting,  [{role, subscriber}, {devices, []}]},
+        {sub_vendor_maintenance,    [{role, subscriber}, {devices, []}]},
+        {sub_quality_assurance2,     [{role, subscriber}, {devices, []}]},
+        {sub_maintenance2,           [{role, subscriber}, {devices, []}]},
+        {sub_operations_forecast2,   [{role, subscriber}, {devices, []}]},
+        {sub_regulatory_reporting2,  [{role, subscriber}, {devices, []}]},
+        {sub_vendor_maintenance2,    [{role, subscriber}, {devices, []}]}
+    ]}
+].

@@ -1,0 +1,59 @@
+[
+    {name, ex1_40dev_5sub_10p1s_baseline},
+    {duration, {60, seconds}},
+    {protocol, mqttv5},
+    {deployment_name, floor_40x1_5sub},
+    {hosts,
+    [
+        {floor1,                     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance,            [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,     [{hostname, "127.0.0.1"}]}
+    ]},
+
+    {protocol_config,
+    [
+        {client_interface_module, ps_bench_topic_encoded_mqtt_interface},
+        {broker, "127.0.0.1"},
+        {port, 18884},
+        {qos,
+        [
+            {default_qos, 0}
+        ]},
+        {device_purposes,
+        [
+            {machine_temperature_sensor, ["quality", "maintenance/predictive", "forecasting", "reporting", "support", "filler/{1,2,3,4,5}"]},
+            {machine_speed_sensor,       ["quality", "maintenance/predictive", "forecasting", "reporting", "support", "filler/{1,2,3,4,5}"]},
+            {machine_energy_consumption, ["quality", "maintenance/predictive", "forecasting", "reporting", "support", "filler/{1,2,3,4,5}"]},
+            {production_quality_sensor,  ["quality", "maintenance/predictive", "forecasting", "reporting", "support", "filler/{1,2,3,4,5}"]},
+            {vibration_sensor,           ["quality", "maintenance/predictive", "forecasting", "reporting", "support", "filler/{1,2,3,4,5}"]},
+            {robot_farmap,               ["quality", "maintenance/predictive", "forecasting", "reporting", "support", "filler/{1,2,3,4,5}"]},
+            {robot_nearmap,              ["quality", "maintenance/predictive", "forecasting", "reporting", "support", "filler/{1,2,3,4,5}"]},
+            {robot_imu,                  ["quality", "maintenance/predictive", "forecasting", "reporting", "support", "filler/{1,2,3,4,5}"]},
+            {robot_lidar,                ["quality", "maintenance/predictive", "forecasting", "reporting", "support", "filler/{1,2,3,4,5}"]},
+            {robot_odometry,             ["quality", "maintenance/predictive", "forecasting", "reporting", "support", "filler/{1,2,3,4,5}"]},
+        ]},
+
+        {node_subscription_purposes,
+        [
+            {sub_quality_assurance,      "quality"},
+            {sub_maintenance,            "maintenance/predictive"},
+            {sub_operations_forecast,    "forecasting"},
+            {sub_regulatory_reporting,   "reporting"},
+            {sub_vendor_maintenance,     "support"}
+        ]}
+    ]},
+
+    {metric_config,
+    [
+        {output_dir, "results"},
+        {metric_plugins,
+        [
+            {ps_bench_throughput_calc_plugin, erlang},
+            {ps_bench_latency_calc_plugin, erlang},
+            {ps_bench_dropped_message_calc_plugin, erlang}
+        ]}
+    ]}
+].
