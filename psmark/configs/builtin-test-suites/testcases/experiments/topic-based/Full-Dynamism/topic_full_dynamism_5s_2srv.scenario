@@ -1,0 +1,72 @@
+% Stock-MQTT twin of dap_full_dynamism_5s_2srv: purposes encoded in topics on stock Mosquitto; toggled
+% purposes are topic (un)subscriptions and operations are broadcast.
+[
+    {name, topic_full_dynamism_5s_2srv},
+    {duration, {60, seconds}},
+    {protocol, mqttv5},
+    {deployment_name, floor_40x2},
+    {hosts,
+    [
+        {floor1,                     [{hostname, "127.0.0.1"}]},
+        {floor2,                     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_predictive, [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_routine,    [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,     [{hostname, "127.0.0.1"}]}
+    ]},
+
+    {protocol_config,
+    [
+        {client_interface_module, ps_bench_topic_encoded_mqtt_interface},
+        {broker, "127.0.0.1"},
+        {port, 18884},
+        {qos,
+        [
+            {default_qos, 0}
+        ]},
+        %% Dynamic purpose toggle every 5s window (same as the Dynamic cells).
+        {purpose_rotation_window_ms, 5000},
+        {rotation_toggle_purpose, "maintenance/routine"},
+        %% Plus one queue-group (DELETE/RESTRICT) op per client per 5s.
+        {op_issue_interval_ms, 5000},
+        {op_issuer_mode, all_publishers},
+        {op_group, queue},
+        {device_purposes,
+        [
+            {machine_temperature_sensor, ["quality/assurance"]},
+            {machine_speed_sensor,       ["maintenance/{predictive,routine}"]},
+            {machine_energy_consumption, ["operations/forecast","regulatory/reporting"]},
+            {production_quality_sensor,  ["quality/assurance","operations/forecast","regulatory/reporting"]},
+            {vibration_sensor,           ["quality/assurance","maintenance/{predictive,routine}"]},
+            {robot_farmap,               ["vendor/maintenance"]},
+            {robot_nearmap,              ["vendor/maintenance"]},
+            {robot_imu,                  ["vendor/maintenance"]},
+            {robot_lidar,                ["vendor/maintenance"]},
+            {robot_odometry,             ["vendor/maintenance"]}
+        ]},
+        %% One subscriber per purpose (paper SS2.2 / SS7.3).
+        {node_subscription_purposes,
+        [
+            {sub_quality_assurance,      "quality/assurance"},
+            {sub_maintenance_predictive, "maintenance/predictive"},
+            {sub_maintenance_routine,    "maintenance/routine"},
+            {sub_operations_forecast,    "operations/forecast"},
+            {sub_regulatory_reporting,   "regulatory/reporting"},
+            {sub_vendor_maintenance,     "vendor/maintenance"}
+        ]}
+    ]},
+
+    {metric_config,
+    [
+        {output_dir, "results"},
+        {hw_stats_poll_period_ms, 1000},
+        {metric_plugins,
+        [
+            {ps_bench_throughput_calc_plugin, erlang},
+            {ps_bench_latency_calc_plugin, erlang},
+            {ps_bench_dropped_message_calc_plugin, erlang}
+        ]}
+    ]}
+].

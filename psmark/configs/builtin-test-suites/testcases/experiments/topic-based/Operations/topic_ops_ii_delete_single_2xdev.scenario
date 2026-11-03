@@ -1,0 +1,68 @@
+% Stock-MQTT twin of dap_ops_ii_delete_single_2xdev: purposes encoded in topics on stock Mosquitto; operations are
+% broadcast to every subscriber (paper Observation 2, option i).
+[
+    {name, topic_ops_ii_delete_single_2xdev},
+    {duration, {60, seconds}},
+    {protocol, mqttv5},
+    {deployment_name, floor_80x1},
+    {hosts,
+    [
+        {floor1,                     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_predictive, [{hostname, "127.0.0.1"}]},
+        {sub_maintenance_routine,    [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,     [{hostname, "127.0.0.1"}]}
+    ]},
+
+    {protocol_config,
+    [
+        {client_interface_module, ps_bench_topic_encoded_mqtt_interface},
+        {broker, "127.0.0.1"},
+        {port, 18884},
+        {qos,
+        [
+            {default_qos, 0}
+        ]},
+        %% Case ii: single_random issuer, queue op group, one op burst per second.
+        {op_issue_interval_ms, 1000},
+        {op_issuer_mode, single_random},
+        {op_group, queue},
+        {device_purposes,
+        [
+            {machine_temperature_sensor, ["quality/assurance"]},
+            {machine_speed_sensor,       ["maintenance/{predictive,routine}"]},
+            {machine_energy_consumption, ["operations/forecast","regulatory/reporting"]},
+            {production_quality_sensor,  ["quality/assurance","operations/forecast","regulatory/reporting"]},
+            {vibration_sensor,           ["quality/assurance","maintenance/{predictive,routine}"]},
+            {robot_farmap,               ["vendor/maintenance"]},
+            {robot_nearmap,              ["vendor/maintenance"]},
+            {robot_imu,                  ["vendor/maintenance"]},
+            {robot_lidar,                ["vendor/maintenance"]},
+            {robot_odometry,             ["vendor/maintenance"]}
+        ]},
+        %% One subscriber per purpose (paper SS2.2 / SS7.3).
+        {node_subscription_purposes,
+        [
+            {sub_quality_assurance,      "quality/assurance"},
+            {sub_maintenance_predictive, "maintenance/predictive"},
+            {sub_maintenance_routine,    "maintenance/routine"},
+            {sub_operations_forecast,    "operations/forecast"},
+            {sub_regulatory_reporting,   "regulatory/reporting"},
+            {sub_vendor_maintenance,     "vendor/maintenance"}
+        ]}
+    ]},
+
+    {metric_config,
+    [
+        {output_dir, "results"},
+        {hw_stats_poll_period_ms, 1000},
+        {metric_plugins,
+        [
+            {ps_bench_throughput_calc_plugin, erlang},
+            {ps_bench_latency_calc_plugin, erlang},
+            {ps_bench_dropped_message_calc_plugin, erlang}
+        ]}
+    ]}
+].

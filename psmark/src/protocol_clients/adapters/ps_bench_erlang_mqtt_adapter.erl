@@ -111,6 +111,9 @@ handle_call(disconnect, _From, State = #{server_reference := ServerReference}) -
     gen_server:call(ServerReference, disconnect),
     {reply, ok, State};
 
+handle_call(op_issue_ready, _From, State = #{server_reference := ServerReference}) ->
+    {reply, (catch gen_server:call(ServerReference, op_issue_ready, 1000)) =:= true, State};
+
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
@@ -166,6 +169,10 @@ handle_info({?DISCONNECTED_MSG, {TimeNs, Reason}, ClientName}, State) ->
 
 handle_info({?PUBLISH_RECV_MSG, {RecvTimeNs, Topic, Payload, Props}, ClientName},
             State = #{server_reference := ServerReference}) ->
+    case is_op_system_topic(Topic) of
+        true -> record_op_message(RecvTimeNs, ClientName, Topic, Props, Payload);
+        false -> ok
+    end,
     case is_op_request_topic(Topic) of
         true ->
             % Broker-forwarded operation request: hand the properties to the
@@ -196,14 +203,26 @@ handle_info({?PUBLISH_RECV_MSG, {RecvTimeNs, Topic, Payload, Props}, ClientName}
 handle_info(_Info, State) ->
     {noreply, State}.
 
+%% Record an operation request or notification this client received.
+record_op_message(RecvTimeNs, ClientName, Topic, Props, Payload) ->
+    UPs = case Props of #{'User-Property' := L} when is_list(L) -> L; _ -> [] end,
+    Get = fun(K) -> case lists:keyfind(K, 1, UPs) of {K, V} -> V; false -> <<>> end end,
+    Kind = case is_op_request_topic(Topic) of true -> op_request; false -> op_notification end,
+    ps_bench_store:record_dap_event(RecvTimeNs, ClientName, Kind, Topic,
+        #{op_type => Get(<<"DAP-OpType">>), op_id => Get(<<"DAP-OpId">>), status => Get(<<"DAP-Status">>),
+          sender => Get(<<"DAP-ClientID">>), detail => Payload}).
+
 %% A broker-forwarded operation request arrives on OP_REQ/<client-id>.
 is_op_request_topic(<<"OP_REQ/", _/binary>>) -> true;
+is_op_request_topic(?LEGACY_OP_REQUEST_TOPIC) -> true;
 is_op_request_topic(_) -> false.
 
 %% Op-system / control-plane traffic that is not benchmark data.
 is_op_system_topic(<<"OP_REQ/", _/binary>>)   -> true;
 is_op_system_topic(<<"OP_NOTIF/", _/binary>>) -> true;
 is_op_system_topic(<<"$OP", _/binary>>)       -> true;
+is_op_system_topic(?LEGACY_OP_REQUEST_TOPIC)  -> true;
+is_op_system_topic(<<"ps_bench/ops/response/", _/binary>>) -> true;
 is_op_system_topic(_) -> false.
 
 do_subscribe(_Topics, ServerReference, Tid) ->

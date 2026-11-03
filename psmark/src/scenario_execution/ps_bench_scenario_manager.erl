@@ -159,7 +159,8 @@ issue_ops_from_publishers() ->
     end.
 
 %% all_publishers -> everyone; single_random -> one publisher, pinned for the run
-%% so the same issuer is reused each interval (deterministic from the RNG seed).
+%% so the same issuer is reused each interval (deterministic from the RNG seed). It is
+%% pinned only once it has published, so its operations concern data subscribers got.
 select_op_issuers(_Mode, []) ->
     [];
 select_op_issuers(?OP_ISSUER_MODE_SINGLE, ClientList) ->
@@ -167,23 +168,26 @@ select_op_issuers(?OP_ISSUER_MODE_SINGLE, ClientList) ->
         Pinned when Pinned =/= undefined ->
             case lists:member(Pinned, ClientList) of
                 true  -> [Pinned];
-                false -> [pin_random_issuer(ClientList)]
+                false -> pin_random_issuer(ClientList)
             end;
         undefined ->
-            [pin_random_issuer(ClientList)]
+            pin_random_issuer(ClientList)
     end;
 select_op_issuers(_AllPublishers, ClientList) ->
     ClientList.
 
-%% Choose one issuer deterministically from the RNG seed (stable across the run
-%% and reproducible), pin it, and return it.
+%% Choose one issuer in an order fixed by the RNG seed (reproducible): the first that
+%% is ready to issue. Pin and return it, or return [] to try again next interval.
 pin_random_issuer(ClientList) ->
-    Sorted = lists:sort(ClientList),
-    N = length(Sorted),
-    Idx = (erlang:phash2(ps_bench_utils:fetch_rng_seed()) rem N) + 1,
-    Chosen = lists:nth(Idx, Sorted),
-    persistent_term:put({?MODULE, op_issuer}, Chosen),
-    Chosen.
+    Seed = ps_bench_utils:fetch_rng_seed(),
+    Ordered = lists:sort(fun({A, _}, {B, _}) -> erlang:phash2({Seed, A}) =< erlang:phash2({Seed, B}) end, ClientList),
+    case lists:search(fun({_N, Pid}) -> (catch gen_server:call(Pid, op_issue_ready, 2000)) =:= true end, Ordered) of
+        {value, Chosen} ->
+            persistent_term:put({?MODULE, op_issuer}, Chosen),
+            [Chosen];
+        false ->
+            []
+    end.
 
 initialize_clients() ->
 
@@ -220,11 +224,9 @@ node_role() ->
     persistent_term:get({?MODULE, node_role}, ?DEPLOYMENT_ROLE_PUBLISHER).
 
 has_publishers() ->
-    node_role() =:= ?DEPLOYMENT_ROLE_PUBLISHER.
+    node_role() =:= ?DEPLOYMENT_ROLE_PUBLISHER orelse node_role() =:= ?DEPLOYMENT_ROLE_PUBLISHER_ONLY.
 
 has_subscriber() ->
-    %% Both publisher and subscriber roles run a subscription client today.
-    %% Threaded as a guard so a future publisher-only role drops in cleanly.
     node_role() =:= ?DEPLOYMENT_ROLE_PUBLISHER orelse node_role() =:= ?DEPLOYMENT_ROLE_SUBSCRIBER.
 
 initialize_clients_for_devices(_NodeName, [], ClientList) ->

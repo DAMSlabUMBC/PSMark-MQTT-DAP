@@ -6,6 +6,7 @@
 %%     persistent_term key is absent) and a subscription client only;
 %%   * a publisher node keeps the legacy publisher+subscriber behavior, actually
 %%     publishes, and (subscribing to itself) actually receives its own data;
+%%   * a publisher_only node publishes and starts no subscription client;
 %%   * the full lifecycle (initialize -> run -> clean_up) completes for BOTH
 %%     roles with no crash / no badkey.
 %%
@@ -39,12 +40,14 @@ main() ->
 
         SubRes = run_node_phase(sub_node, subscriber),
         PubRes = run_node_phase(pub_node, publisher),
+        PubOnlyRes = run_node_phase(pubonly_node, publisher_only),
 
         io:format("~n==== PART 1 RESULTS ====~n"),
         print_phase(SubRes),
         print_phase(PubRes),
+        print_phase(PubOnlyRes),
 
-        Ok = phase_ok(SubRes) andalso phase_ok(PubRes),
+        Ok = phase_ok(SubRes) andalso phase_ok(PubRes) andalso phase_ok(PubOnlyRes),
         case Ok of
             true  -> io:format("~nPART 1 PASSED~n"), halt(0);
             false -> io:format("~nPART 1 FAILED~n"), halt(1)
@@ -115,6 +118,14 @@ phase_ok(#{expected_role := publisher} = R) ->
         andalso (maps:get(num_device_clients, R) > 0)
         andalso (maps:get(pub_events, R) > 0)
         andalso (maps:get(recv_events, R) > 0)
+        andalso (maps:get(keys_cleaned, R) =:= true);
+phase_ok(#{expected_role := publisher_only} = R) ->
+    %% publisher_only: publishes, but has no subscriber and so receives nothing.
+    (maps:get(has_device_clients, R) =:= true)
+        andalso (maps:get(has_subscription_client, R) =:= false)
+        andalso (maps:get(num_device_clients, R) > 0)
+        andalso (maps:get(pub_events, R) > 0)
+        andalso (maps:get(recv_events, R) =:= 0)
         andalso (maps:get(keys_cleaned, R) =:= true).
 
 print_phase(R) ->
@@ -188,7 +199,8 @@ setup_config_files() ->
         "[{name, role_itest},\n"
         " {nodes,\n"
         "  [{pub_node, [{devices, [{test_sensor, 2}]}]},\n"
-        "   {sub_node, [{devices, []}, {role, subscriber}]}]}].\n",
+        "   {sub_node, [{devices, []}, {role, subscriber}]},\n"
+        "   {pubonly_node, [{devices, [{test_sensor, 2}]}, {role, publisher_only}]}]}].\n",
     ok = file:write_file(DepDir ++ "/role_itest.deployment", Deployment),
 
     Scenario =
@@ -197,13 +209,16 @@ setup_config_files() ->
         " {protocol, mqttv5},\n"
         " {deployment_name, role_itest},\n"
         " {hosts, [{pub_node, [{hostname, \"127.0.0.1\"}]},\n"
-        "          {sub_node, [{hostname, \"127.0.0.1\"}]}]},\n"
+        "          {sub_node, [{hostname, \"127.0.0.1\"}]},\n"
+        "          {pubonly_node, [{hostname, \"127.0.0.1\"}]}]},\n"
         " {protocol_config,\n"
         "  [{client_interface_module, ps_bench_dap_mqtt_interface},\n"
         "   {broker, \"" ?BROKER_HOST "\"},\n"
         "   {port, " ++ integer_to_list(?BROKER_PORT) ++ "},\n"
         "   {qos, [{default_qos, 0}]},\n"
-        "   {device_purposes, [{test_sensor, \"quality/assurance\"}]}]},\n"
+        "   {device_purposes, [{test_sensor, \"quality/assurance\"}]},\n"
+        "   {node_subscription_purposes, [{pub_node, \"quality/assurance\"},\n"
+        "                                 {sub_node, \"quality/assurance\"}]}]},\n"
         " {metric_config,\n"
         "  [{output_dir, \"" ?DIR "/results\"},\n"
         "   {hw_stats_poll_period_ms, 1000},\n"

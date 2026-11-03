@@ -1,16 +1,24 @@
 -module(ps_bench_dropped_message_calc_plugin).
 
+-include("ps_bench_config.hrl").
+
 -export([init/1, calc/0]).
 
 init(OutDir) ->
       persistent_term:put({?MODULE, out_dir}, OutDir).
 
 calc() ->
-      OverallResults = calculate_overall_dropped_messages(),
-      PairwiseResults = calculate_pairwise_dropped_messages(),
+      % A node that does not subscribe receives nothing, so it has no drops to report
+      case ps_bench_config_manager:fetch_role_for_this_node() of
+            {ok, ?DEPLOYMENT_ROLE_PUBLISHER_ONLY} ->
+                  write_csv([]);
+            _ ->
+                  OverallResults = calculate_overall_dropped_messages(),
+                  PairwiseResults = calculate_pairwise_dropped_messages(),
 
-      AllResults = [OverallResults] ++ PairwiseResults,
-      write_csv(AllResults).
+                  AllResults = [OverallResults] ++ PairwiseResults,
+                  write_csv(AllResults)
+      end.
     
 calculate_overall_dropped_messages() ->
       % Get all messages recieved by this node

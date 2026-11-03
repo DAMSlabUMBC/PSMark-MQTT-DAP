@@ -92,6 +92,7 @@ save_events_to_disk(OutDir) ->
     ps_bench_store:write_recv_events_to_disk(filename:join(FilePrefix, ps_bench_utils:convert_to_list(NodeName) ++ "_recv_events.csv")),
     ps_bench_store:write_connect_events_to_disk(filename:join(FilePrefix, ps_bench_utils:convert_to_list(NodeName) ++ "_connect_events.csv")),
     ps_bench_store:write_disconnect_events_to_disk(filename:join(FilePrefix, ps_bench_utils:convert_to_list(NodeName) ++ "_disconnect_events.csv")),
+    ps_bench_store:write_dap_events_to_disk(filename:join(FilePrefix, ps_bench_utils:convert_to_list(NodeName) ++ "_dap_events.csv")),
     ps_bench_store:write_cpu_usage_events_to_disk(filename:join(FilePrefix, ps_bench_utils:convert_to_list(NodeName) ++ "_cpu_events.csv")),
     ps_bench_store:write_memory_usage_events_to_disk(filename:join(FilePrefix, ps_bench_utils:convert_to_list(NodeName) ++ "_mem_events.csv")),
     ok.

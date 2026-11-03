@@ -7,6 +7,7 @@
 -export([get_next_seq_id/1]).
 %% recv event I/O
 -export([record_recv/6, record_recv/7, record_publish/3, record_connect/2, record_disconnect/3, store_aggregate_publish_results_in_mnesia/0, record_cpu_usage/3, record_memory_usage/3]).
+-export([record_dap_event/5, fetch_dap_events/0, write_dap_events_to_disk/1]).
 %% rollup helpers
 -export([get_last_recv_seq/1, put_last_recv_seq/2]).
 %% window summaries
@@ -24,6 +25,7 @@
 -define(T_RECV_EVENTS, psb_recv_events).
 -define(T_CPU_EVENTS, cpu_usage_events).
 -define(T_MEM_EVENTS, mem_usage_events).
+-define(T_DAP_EVENTS, psb_dap_events).   %% MP/SP changes and operation traffic
 
 initialize_node_storage() ->
     % Clear any existing tables first
@@ -31,7 +33,7 @@ initialize_node_storage() ->
         catch ets:delete(Table)
     end, [?T_PUBSEQ, ?T_RECVSEQ, ?T_CONNECT_EVENTS, 
           ?T_DISCONNECT_EVENTS, ?T_PUBLISH_EVENTS, 
-          ?T_RECV_EVENTS]),
+          ?T_RECV_EVENTS, ?T_DAP_EVENTS]),
     
     % Now create fresh tables
     ensure_tables(),
@@ -151,6 +153,11 @@ ensure_tables() ->
                                               {write_concurrency,true}]);
         _ -> ok
     end,
+    case ets:info(?T_DAP_EVENTS) of
+        undefined -> ets:new(?T_DAP_EVENTS, [named_table, public, duplicate_bag,
+                                              {write_concurrency,true}]);
+        _ -> ok
+    end,
     ok.
 
 %% record a recv event 
@@ -170,9 +177,38 @@ record_recv(ClientName, TopicBin, Seq, TPubNs, TRecvNs, Bytes) ->
 record_publish(ClientName, Topic, Seq) ->
     ensure_tables(),
     {ok, NodeName} = ps_bench_config_manager:fetch_node_name(),
-    Event = {NodeName, ClientName, Topic, Seq},
+    Event = {NodeName, ClientName, Topic, Seq, erlang:system_time(nanosecond)},
     ets:insert(?T_PUBLISH_EVENTS, Event),
     ok.
+
+%% A DAP control event of a client: mp_register, sp_subscribe, op_issue, op_request
+%% or op_notification. Values may hold op_type, op_id, status, sender and detail (the
+%% MP or SP filter, the operation's purposes, or a notification's payload).
+record_dap_event(TimeNs, ClientName, Kind, Topic, Values) ->
+    ensure_tables(),
+    Get = fun(K) -> maps:get(K, Values, <<>>) end,
+    ets:insert(?T_DAP_EVENTS, {TimeNs, ClientName, Kind, Topic, Get(op_type), Get(op_id),
+                               Get(status), Get(sender), Get(detail)}),
+    ok.
+
+fetch_dap_events() ->
+    ets:tab2list(?T_DAP_EVENTS).
+
+write_dap_events_to_disk(OutFile) ->
+    {ok, File} = file:open(OutFile, [write]),
+    io:format(File, "TimeNs,Client,Event,Topic,OpType,OpId,Status,Sender,Detail~n", []),
+    lists:foreach(
+         fun({TimeNs, ClientName, Kind, Topic, OpType, OpId, Status, Sender, Detail}) ->
+              Fields = [csv_field(F) || F <- [ClientName, Kind, Topic, OpType, OpId, Status, Sender, Detail]],
+              io:format(File, "~b,~s~n", [TimeNs, lists:join(",", Fields)])
+          end, lists:keysort(1, fetch_dap_events())),
+    _ = file:sync(File),
+    file:close(File).
+
+%% A quoted CSV field, with any quote doubled.
+csv_field(Value) ->
+    Text = ps_bench_utils:convert_to_list(Value),
+    [$" | string:replace(Text, "\"", "\"\"", all)] ++ [$"].
 
 record_connect(ClientName, TimeNs) ->
     ensure_tables(),
@@ -237,10 +273,10 @@ write_publish_events_to_disk(OutFile) ->
 
     % Open file and write the results
     {ok, File} = file:open(OutFile, [write]),
-    io:format(File, "SenderID,SendingClient,Topic,SeqId~n", []),
+    io:format(File, "SenderID,SendingClient,Topic,SeqId,PubTimeNs~n", []),
     lists:foreach(
-         fun({NodeName, ClientName, Topic, Seq}) ->
-              io:format(File, "~p,~p,~p,~p~n",[NodeName, ClientName, Topic, Seq])
+         fun({NodeName, ClientName, Topic, Seq, TimeNs}) ->
+              io:format(File, "~p,~p,~p,~p,~p~n",[NodeName, ClientName, Topic, Seq, TimeNs])
           end, PubEvents),
     % Ensure data is written to disk; ignore errors on platforms where sync is not supported
     _ = file:sync(File),
@@ -255,7 +291,7 @@ store_aggregate_publish_results_in_mnesia() ->
 
     % We don't need to send all message details, so we can aggregate into one tuple
     % organized as {SenderID, TopicName -> [SeqIds])
-    FullTopicMap = ets:foldl(fun({_NodeName, _ClientName, Topic, Seq}, TopicMap) ->
+    FullTopicMap = ets:foldl(fun({_NodeName, _ClientName, Topic, Seq, _TimeNs}, TopicMap) ->
         
         case maps:get(Topic, TopicMap, undefined) of
 

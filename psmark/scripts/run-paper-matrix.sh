@@ -275,14 +275,16 @@ duration_secs_for() {  # scenario {duration,{N,Units}} -> seconds
     io:format(\"~b~n\",[S]), halt(0)."
 }
 
-broker_port_for() { case "$1" in dap) echo "${DAP_HOST_PORT}";; *) echo "${STOCK_HOST_PORT}";; esac }
+broker_port_for() { case "$1" in dap|dapnv) echo "${DAP_HOST_PORT}";; *) echo "${STOCK_HOST_PORT}";; esac }
 
 start_broker() {  # start_broker <group>
   local group="$1"
   case "${group}" in
-    dap)
+    dap|dapnv)
+      local conf=mosquitto-dap.conf
+      [ "${group}" = dapnv ] && conf=mosquitto-dap-noverify.conf
       docker run -d --rm --name "${BROKER_NAME}" -p "127.0.0.1:${DAP_HOST_PORT}:1883" \
-        -v "${CONTAINER_CONFIG_DIR}/mosquitto-dap.conf:/etc/mosquitto/mosquitto.conf:ro" \
+        -v "${CONTAINER_CONFIG_DIR}/${conf}:/etc/mosquitto/mosquitto.conf:ro" \
         "${DAP_BROKER_IMAGE}" >/dev/null ;;
     stock)
       docker run -d --rm --name "${BROKER_NAME}" -p "127.0.0.1:${STOCK_HOST_PORT}:1883" \
@@ -302,6 +304,8 @@ start_broker() {  # start_broker <group>
 stop_broker() {  # stop_broker <cell_dir> ; capture logs first, record teardown status
   local cell_dir="$1"
   docker logs "${BROKER_NAME}" > "${cell_dir}/broker.log" 2>&1 || true
+  # The DAP broker's per-message metrics (re-verifications for the DPR); stock has none.
+  docker cp "${BROKER_NAME}:/tmp/dap_broker_metrics.csv" "${cell_dir}/broker_metrics.csv" >/dev/null 2>&1 || true
   # The DAP broker is known to segfault on shutdown (exit 139). That is a
   # teardown-time crash AFTER data collection; record it, never fail the cell
   # transition on it - just make sure the container and port are really gone.
@@ -440,7 +444,7 @@ for img in "${DAP_BROKER_IMAGE}" "${STOCK_BROKER_IMAGE}"; do
   docker image inspect "${img}" >/dev/null 2>&1 \
     || { echo "PRE-RUN FAIL: broker image '${img}' not found locally" >&2; exit 1; }
 done
-for conf in mosquitto-dap.conf mosquitto-stock.conf; do
+for conf in mosquitto-dap.conf mosquitto-dap-noverify.conf mosquitto-stock.conf; do
   [ -f "${CONTAINER_CONFIG_DIR}/${conf}" ] \
     || { echo "PRE-RUN FAIL: missing ${CONTAINER_CONFIG_DIR}/${conf}" >&2; exit 1; }
 done
@@ -496,10 +500,15 @@ for pass in $(seq 1 "${PASSES}"); do
       log "pass ${pass} cell ${cell}: FAILED (see ${cell_dir}/nodes/*/node.log) - continuing with next cell"
       continue   # breadth-first: a bad cell must not starve the rest of the pass
     fi
+    # EAR/ERR, DPR and operation coverage/leakage/completion for the cell
+    python3 "${SCRIPT_DIR}/dap_metrics.py" "${cell_dir}" --json "${cell_dir}/dap_metrics.json" \
+      > "${cell_dir}/dap_metrics.txt" 2>&1 || log "pass ${pass} cell ${cell}: dap_metrics.py failed (see dap_metrics.txt)"
     date '+%F %T' > "${cell_dir}/DONE"
     log "pass ${pass} cell ${cell}: DONE"
   done
   log "=== PASS ${pass}/${PASSES} COMPLETE ==="
 done
 
+python3 "${SCRIPT_DIR}/dap_metrics_summary.py" "${RESULTS_ROOT}" > "${RESULTS_ROOT}/dap_metrics_summary.csv" \
+  || log "dap_metrics_summary.py failed"
 log "Matrix run finished."
