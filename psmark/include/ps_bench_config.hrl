@@ -84,6 +84,7 @@
 -define(MQTT_NODE_SP_PROP, node_subscription_purposes).
 % Session expiry (s) for DAP clients, so operation traffic survives a reconnect
 -define(DAP_SESSION_EXPIRY_SECS, 3600).
+-define(MQTT_SUBSCRIBE_UNSCOPED_PROP, subscribe_unscoped_nodes).
 % NOTE: We do not require a client interface module as we fall back to a default one
 % NOTE: We do not require a default MQTT QoS as we fall back to 0
 -define(MQTT_REQ_KEY_LIST, [?MQTT_BROKER_IP_PROP, ?MQTT_BROKER_PORT_PROP]).
@@ -154,6 +155,7 @@
 -define(DAP_KEY_OPID, <<"DAP-OpId">>).
 -define(DAP_KEY_OPTFS, <<"DAP-OpTFs">>).
 -define(DAP_KEY_OPPFS, <<"DAP-OpPFs">>).
+-define(DAP_KEY_OPPARAM, <<"DAP-OpParam">>).
 -define(DAP_KEY_STATUS, <<"DAP-Status">>).
 -define(DAP_KEY_REASON, <<"DAP-Reason">>).
 -define(DAP_ALLOW_ALL_FILTER, <<"*">>).      % MOSQ_DAP_ALLOW_ALL_FILTER
@@ -189,4 +191,4 @@
 
 % Records for metric storage
 -define(PUB_AGG_RECORD_NAME, pub_aggregate).
--record(?PUB_AGG_RECORD_NAME, {node_name, binary_aggregate}).
+-record(?PUB_AGG_RECORD_NAME, {node_name, binary_aggregate}).

@@ -15,7 +15,7 @@
         {sub_maintenance2,            [{hostname, "127.0.0.1"}]},
         {sub_operations_forecast2,    [{hostname, "127.0.0.1"}]},
         {sub_regulatory_reporting2,   [{hostname, "127.0.0.1"}]},
-        {sub_vendor_maintenance2,     [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance2,     [{hostname, "127.0.0.1"}]}
     ]},
 
     {protocol_config,

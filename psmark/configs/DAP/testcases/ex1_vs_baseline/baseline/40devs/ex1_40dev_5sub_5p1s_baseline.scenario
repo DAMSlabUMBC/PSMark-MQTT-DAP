@@ -34,7 +34,7 @@
             {robot_nearmap,              ["quality", "maintenance/predictive", "forecasting", "reporting", "support"]},
             {robot_imu,                  ["quality", "maintenance/predictive", "forecasting", "reporting", "support"]},
             {robot_lidar,                ["quality", "maintenance/predictive", "forecasting", "reporting", "support"]},
-            {robot_odometry,             ["quality", "maintenance/predictive", "forecasting", "reporting", "support"]},
+            {robot_odometry,             ["quality", "maintenance/predictive", "forecasting", "reporting", "support"]}
         ]},
 
         {node_subscription_purposes,

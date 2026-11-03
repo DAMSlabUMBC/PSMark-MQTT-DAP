@@ -34,7 +34,7 @@
             {robot_nearmap,              ["1per5/{1,2,3,4,5}"]},
             {robot_imu,                  ["1per5/{1,2,3,4,5}"]},
             {robot_lidar,                ["1per5/{1,2,3,4,5}"]},
-            {robot_odometry,             ["1per5/{1,2,3,4,5}"]},
+            {robot_odometry,             ["1per5/{1,2,3,4,5}"]}
         ]},
 
         {node_subscription_purposes,

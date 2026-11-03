@@ -7,7 +7,7 @@
 -export([start_link/3]).
 
 %% exported for eunit
--export([purpose_scoped_filters/2]).
+-export([purpose_scoped_filters/2, should_subscribe/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3,
@@ -31,7 +31,8 @@ init({ScenarioName, RegName, OwnerPid}) ->
     {ok, RotationWindowMs} = ps_bench_config_manager:fetch_mqtt_purpose_rotation_window_ms(),
     {ok, TogglePurpose} = ps_bench_config_manager:fetch_mqtt_rotation_toggle_purpose(),
     {ok, NodeRole} = ps_bench_config_manager:fetch_role_for_this_node(),
-    {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, purpose_map => PurposeMap, variant_count => VariantCount, fanout_model => FanoutModel, node_purpose => NodePurpose,
+    {ok, SubscribeUnscoped} = ps_bench_config_manager:fetch_mqtt_subscribe_unscoped_nodes(),
+    {ok, #{subscribe_unscoped => SubscribeUnscoped, scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName, client_pid => 0, owner_pid => OwnerPid, connected => false, first_start => true, purpose_map => PurposeMap, variant_count => VariantCount, fanout_model => FanoutModel, node_purpose => NodePurpose,
            rotation_window_ms => RotationWindowMs, rotation_toggle => TogglePurpose, node_role => NodeRole,
            sub_topics => [], applied => [], published => #{}, op_seq => 0}}.
 
@@ -61,9 +62,12 @@ handle_call(connect_clean, _From, State) ->
 handle_call(reconnect, _From, State) ->
     do_connect(false, State);
 
-handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected, node_purpose := undefined}) when Connected == true ->
+handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, connected := Connected, node_purpose := undefined, subscribe_unscoped := SubscribeUnscoped}) when Connected == true ->
     %% Unscoped nodes keep the wildcard topics they were given.
-    _ = emqtt:subscribe(ClientPid, Properties, Topics),
+    case should_subscribe(undefined, SubscribeUnscoped) of
+        true -> _ = emqtt:subscribe(ClientPid, Properties, Topics);
+        false -> ok
+    end,
     {reply, ok, State};
 
 handle_call({subscribe, Properties, Topics}, _From, State = #{client_pid := ClientPid, client_name := ClientIdBin, connected := Connected}) when Connected == true ->
@@ -296,6 +300,11 @@ ensure_emqtt_started() ->
 %% braces in the purpose, e.g. the scaling suffixes, expand to one filter per
 %% variant exactly like the publisher fan-out). undefined = unscoped node:
 %% topics pass through untouched. Non-wildcard topics also pass through.
+%% A publisher node (no purpose) takes no copy of the data when the scenario
+%% turns unscoped subscriptions off, matching the DAP cells' traffic.
+should_subscribe(undefined, SubscribeUnscoped) -> SubscribeUnscoped;
+should_subscribe(_NodePurpose, _SubscribeUnscoped) -> true.
+
 purpose_scoped_filters(undefined, Topics) ->
     Topics;
 purpose_scoped_filters(PurposeBin, Topics) when is_binary(PurposeBin) ->

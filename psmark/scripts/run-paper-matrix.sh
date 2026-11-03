@@ -43,7 +43,7 @@ PROGRESS_LOG="${RESULTS_ROOT}/matrix_progress.log"
 CONTAINER_METRICS_PATH="/tmp/dap_broker_metrics.csv"
 CONTAINER_STATS_PATH="/tmp/dap_broker_stats.csv"
 
-DAP_BROKER_IMAGE="mqtt-dap-mosquitto:develop"      # built from mqtt-dap-mosquitto develop (>= 0ba79c81)
+DAP_BROKER_IMAGE="mqtt-dap-mosquitto:conditional-hold"      # built from mqtt-dap-mosquitto conditional-hold
 #STOCK_BROKER_IMAGE="eclipse-mosquitto:2"
 #STOCK_BROKER_IMAGE="mosquitto-stock-instrumented:2.1.2"  # mqtt-dap-mosquitto stock-instrumented-2.1.2, same base as DAP image
 STOCK_BROKER_IMAGE="mosquitto-stats:2.1-ubuntu"
@@ -61,7 +61,7 @@ DATABASE_PATH="/tmp/mosquitto.sqlite3"
 DATABASE_SIZE_QUERY="select SUM(\"pgsize\") FROM \"dbstat\" WHERE name LIKE 'dap_%';"
 DOCKER_DATABASE_CMD="docker exec -i $BROKER_NAME $DATABASE_CMD $DATABASE_PATH \"$DATABASE_SIZE_QUERY\""
 
-# ---- the matrix (Appendix B, Table 5; 55 cells) ------------------------------
+# ---- the matrix (Appendix B, Table 5; 55 cells plus 3 matched baselines) ------------------------------
 # group:scenario_name - dap = DAP broker on 18883, stock = stock broker on 18884.
 # The DAP 1x purpose datapoint REUSES dap_static_base (steady-state 40x1); it is
 # deliberately not a separate cell.
@@ -400,7 +400,9 @@ EOF
     echo "$CURR_DATE,`$DOCKER_STATS_CMD`" > temp_record.csv && cat temp_record.csv >> "${cell_dir}/broker_container_stats_${cell}_${pass}.csv"
 
     # Take DB stats
-    echo "$CURR_DATE,`eval $DOCKER_DATABASE_CMD`" > temp_record.csv && cat temp_record.csv >> "${cell_dir}/broker_db_stats_${cell}_${pass}.csv"
+    if [ "${group}" = "dap" ]; then
+      echo "$CURR_DATE,`eval $DOCKER_DATABASE_CMD`" > temp_record.csv && cat temp_record.csv >> "${cell_dir}/broker_db_stats_${cell}_${pass}.csv"
+    fi
 
     alive=0
     for pid in "${pids[@]}"; do kill -0 "${pid}" 2>/dev/null && alive=$((alive+1)); done

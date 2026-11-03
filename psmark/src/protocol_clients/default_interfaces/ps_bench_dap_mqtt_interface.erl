@@ -181,7 +181,7 @@ handle_cast({issue_operation, OpType}, State = #{connected := true, client_pid :
     Notif = <<(?DAP_TOPIC_OP_NOTIF)/binary, "/", ClientIdBin/binary>>,
     _ = emqtt:subscribe(ClientPid, #{'User-Property' => [{?DAP_KEY_SP, ?DAP_OP_PURPOSE}]},
                         [{Notif, [{qos, 1}]}]),
-    OpProps = #{'User-Property' => [
+    OpProps = #{'User-Property' => op_param(OpType, Regs) ++ [
                     {?DAP_KEY_OPTYPE, OpType},
                     {?DAP_KEY_OPTFS, OpTFs},
                     {?DAP_KEY_OPPFS, OpPFs},
@@ -285,6 +285,18 @@ rotate_registrations(State = #{connected := true, client_pid := ClientPid,
     State#{registered_topics := NewRegs};
 rotate_registrations(State) ->
     State.
+
+%% A RESTRICT's new MP: the first of this client's registered purposes, so
+%% subscribers that use any other purpose lose the data it covers.
+op_param(<<"RESTRICT">>, Regs) ->
+    Purposes = lists:usort(lists:append(
+                 [binary:split(F, <<"|">>, [global]) || F <- maps:values(Regs)])),
+    case Purposes of
+        [First | _] -> [{?DAP_KEY_OPPARAM, First}];
+        [] -> [{?DAP_KEY_OPPARAM, ?DAP_ALLOW_ALL_FILTER}]
+    end;
+op_param(_OpType, _Regs) ->
+    [].
 
 %% Active toggled filter ('|'-joined binary) for "now" over BaseTokens, or
 %% undefined when rotation is off (window 0 or no toggle purpose configured).

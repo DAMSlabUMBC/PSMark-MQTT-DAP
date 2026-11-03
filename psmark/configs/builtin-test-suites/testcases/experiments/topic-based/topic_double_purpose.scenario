@@ -17,6 +17,7 @@
     {protocol_config,
     [
         {client_interface_module, ps_bench_topic_encoded_mqtt_interface},
+        {subscribe_unscoped_nodes, false},
         {broker, "127.0.0.1"},
         {port, 18884},
         {qos,

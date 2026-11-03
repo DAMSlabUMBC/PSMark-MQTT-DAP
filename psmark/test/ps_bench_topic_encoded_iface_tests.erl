@@ -45,3 +45,10 @@ non_wildcard_topic_passthrough_test() ->
     ?assertEqual(Topics,
                  ps_bench_topic_encoded_mqtt_interface:purpose_scoped_filters(
                    <<"quality/assurance">>, Topics)).
+
+should_subscribe_test() ->
+    M = ps_bench_topic_encoded_mqtt_interface,
+    ?assert(M:should_subscribe(undefined, true)),
+    ?assertNot(M:should_subscribe(undefined, false)),
+    ?assert(M:should_subscribe(<<"vendor/maintenance">>, false)),
+    ?assert(M:should_subscribe(<<"vendor/maintenance">>, true)).
