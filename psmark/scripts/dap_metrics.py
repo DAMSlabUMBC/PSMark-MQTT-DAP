@@ -231,9 +231,11 @@ def delivery_protection(cell):
         return None
     queued = reverified = messages = bumped = 0
     for r in read_rows(path):
+        if "num_subs_matched" not in r:  # the stock broker has no queuing model to measure
+            return None
         messages += 1
         queued += int(r["num_subs_matched"])
-        b = int(r["bump_count"])
+        b = int(r["reeval_count"])
         reverified += b
         bumped += b > 0
     return {"messages": messages, "queued_deliveries": queued, "reverifications": reverified,
