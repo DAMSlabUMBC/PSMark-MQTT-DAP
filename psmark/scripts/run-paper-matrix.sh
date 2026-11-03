@@ -92,97 +92,131 @@ DOCKER_DATABASE_CMD="docker exec -i $BROKER_NAME $DATABASE_CMD $DATABASE_PATH \"
 # )
 
 CELLS=(
-  # Ex 1: Versus Baseline
+  # ===== Ex 1: Versus Baseline =====
+  # == Basline - 40 devs ==
+  # - 5 subs -
+  "stock:ex1_40dev_5sub_10p1s_baseline"
+  "stock:ex1_40dev_5sub_1p1s_baseline"
+  "stock:ex1_40dev_5sub_5p1s_baseline"
+  "stock:ex1_40dev_5sub_5p5s_baseline"
+  "stock:ex1_40dev_5sub_globalpurpose_baseline"
+  # - 10 subs -
   "stock:ex1_40dev_10sub_10p1s_baseline"
   "stock:ex1_40dev_10sub_1p1s_baseline"
   "stock:ex1_40dev_10sub_1p5s_baseline"
   "stock:ex1_40dev_10sub_5p1s_baseline"
   "stock:ex1_40dev_10sub_5p5s_baseline"
   "stock:ex1_40dev_10sub_globalpurpose_baseline"
+  # - 40 subs -
   "stock:ex1_40dev_40sub_10p1s_baseline"
   "stock:ex1_40dev_40sub_1p1s_baseline"
   "stock:ex1_40dev_40sub_1p5s_baseline"
   "stock:ex1_40dev_40sub_5p1s_baseline"
   "stock:ex1_40dev_40sub_5p5s_baseline"
   "stock:ex1_40dev_40sub_globalpurpose_baseline"
-  "stock:ex1_40dev_5sub_10p1s_baseline"
-  "stock:ex1_40dev_5sub_1p1s_baseline"
-  "stock:ex1_40dev_5sub_5p1s_baseline"
-  "stock:ex1_40dev_5sub_5p5s_baseline"
-  "stock:ex1_40dev_5sub_globalpurpose_baseline"
+
+  # == Stock - 480 devs ==
+  # - 5 subs -
+  "stock:ex1_80dev_5sub_10p1s_baseline"
+  "stock:ex1_80dev_5sub_1p1s_baseline"
+  "stock:ex1_80dev_5sub_5p1s_baseline"
+  "stock:ex1_80dev_5sub_5p5s_baseline"
+  "stock:ex1_80dev_5sub_globalpurpose_baseline"
+  # - 10 subs -
   "stock:ex1_80dev_10sub_10p1s_baseline"
   "stock:ex1_80dev_10sub_1p1s_baseline"
   "stock:ex1_80dev_10sub_1p5s_baseline"
   "stock:ex1_80dev_10sub_5p1s_baseline"
   "stock:ex1_80dev_10sub_5p5s_baseline"
   "stock:ex1_80dev_10sub_globalpurpose_baseline"
+  # - 40 subs -
   "stock:ex1_80dev_40sub_10p1s_baseline"
   "stock:ex1_80dev_40sub_1p1s_baseline"
   "stock:ex1_80dev_40sub_1p5s_baseline"
   "stock:ex1_80dev_40sub_5p1s_baseline"
   "stock:ex1_80dev_40sub_5p5s_baseline"
   "stock:ex1_80dev_40sub_globalpurpose_baseline"
-  "stock:ex1_80dev_5sub_10p1s_baseline"
-  "stock:ex1_80dev_5sub_1p1s_baseline"
-  "stock:ex1_80dev_5sub_5p1s_baseline"
-  "stock:ex1_80dev_5sub_5p5s_baseline"
-  "stock:ex1_80dev_5sub_globalpurpose_baseline"
-
+  
+  # == DAP - 40 devs ==
+  # - 5 subs -
+  "dap:ex1_40dev_5sub_10p1s_dap"
+  "dap:ex1_40dev_5sub_1p1s_dap"
+  "dap:ex1_40dev_5sub_5p1s_dap"
+  "dap:ex1_40dev_5sub_5p5s_dap"
+  "dap:ex1_40dev_5sub_globalpurpose_dap"
+  # - 10 subs -
   "dap:ex1_40dev_10sub_10p1s_dap"
   "dap:ex1_40dev_10sub_1p1s_dap"
   "dap:ex1_40dev_10sub_1p5s_dap"
   "dap:ex1_40dev_10sub_5p1s_dap"
   "dap:ex1_40dev_10sub_5p5s_dap"
   "dap:ex1_40dev_10sub_globalpurpose_dap"
+  # - 40 subs -
   "dap:ex1_40dev_40sub_10p1s_dap"
   "dap:ex1_40dev_40sub_1p1s_dap"
   "dap:ex1_40dev_40sub_1p5s_dap"
   "dap:ex1_40dev_40sub_5p1s_dap"
   "dap:ex1_40dev_40sub_5p5s_dap"
   "dap:ex1_40dev_40sub_globalpurpose_dap"
-  "dap:ex1_40dev_5sub_10p1s_dap"
-  "dap:ex1_40dev_5sub_1p1s_dap"
-  "dap:ex1_40dev_5sub_5p1s_dap"
-  "dap:ex1_40dev_5sub_5p5s_dap"
-  "dap:ex1_40dev_5sub_globalpurpose_dap"
+
+  # == DAP - 80 devs == 
+  # - 5 subs -
+  "dap:ex1_80dev_5sub_10p1s_dap"
+  "dap:ex1_80dev_5sub_1p1s_dap"
+  "dap:ex1_80dev_5sub_5p1s_dap"
+  "dap:ex1_80dev_5sub_5p5s_dap"
+  "dap:ex1_80dev_5sub_globalpurpose_dap"
+  # - 10 subs -
   "dap:ex1_80dev_10sub_10p1s_dap"
   "dap:ex1_80dev_10sub_1p1s_dap"
   "dap:ex1_80dev_10sub_1p5s_dap"
   "dap:ex1_80dev_10sub_5p1s_dap"
   "dap:ex1_80dev_10sub_5p5s_dap"
   "dap:ex1_80dev_10sub_globalpurpose_dap"
+  # - 40 subs -
   "dap:ex1_80dev_40sub_10p1s_dap"
   "dap:ex1_80dev_40sub_1p1s_dap"
   "dap:ex1_80dev_40sub_1p5s_dap"
   "dap:ex1_80dev_40sub_5p1s_dap"
   "dap:ex1_80dev_40sub_5p5s_dap"
   "dap:ex1_80dev_40sub_globalpurpose_dap"
-  "dap:ex1_80dev_5sub_10p1s_dap"
-  "dap:ex1_80dev_5sub_1p1s_dap"
-  "dap:ex1_80dev_5sub_5p1s_dap"
-  "dap:ex1_80dev_5sub_5p5s_dap"
-  "dap:ex1_80dev_5sub_globalpurpose_dap"
 
-  # Ex 2: Scalability
+  # ===== Ex 2: Scalability =====
+  # == Stock - 40 devs ==
+  # - QoS 0 -
+  "stock:ex2_40dev_5sub_qos0_stock"
   "stock:ex2_40dev_10sub_qos0_stock"
   "stock:ex2_40dev_40sub_qos0_stock"
-  "stock:ex2_40dev_5sub_qos0_stock"
+  # - QoS 1 -
+  "stock:ex2_40dev_5sub_qos1_stock"
   "stock:ex2_40dev_10sub_qos1_stock"
   "stock:ex2_40dev_40sub_qos1_stock"
-  "stock:ex2_40dev_5sub_qos1_stock"
+  # - QoS 2 -
+  "stock:ex2_40dev_5sub_qos2_stock"
   "stock:ex2_40dev_10sub_qos2_stock"
   "stock:ex2_40dev_40sub_qos2_stock"
-  "stock:ex2_40dev_5sub_qos2_stock"
+  # == Stock - 40 devs ==
+  # - QoS 0 -
+  "stock:ex2_80dev_5sub_qos0_stock"
   "stock:ex2_80dev_10sub_qos0_stock"
   "stock:ex2_80dev_40sub_qos0_stock"
-  "stock:ex2_80dev_5sub_qos0_stock"
+  # - QoS 1 -
+  "stock:ex2_80dev_5sub_qos1_stock"
   "stock:ex2_80dev_10sub_qos1_stock"
   "stock:ex2_80dev_40sub_qos1_stock"
-  "stock:ex2_80dev_5sub_qos1_stock"
+  # - QoS 2 -
+  "stock:ex2_80dev_5sub_qos2_stock"
   "stock:ex2_80dev_10sub_qos2_stock"
   "stock:ex2_80dev_40sub_qos2_stock"
-  "stock:ex2_80dev_5sub_qos2_stock"
 
+  # == DAP - 40 devs ==
+  # - QoS 0 handled by Ex 1 -
+  # - QoS 1 -
+  "dap:ex2_40dev_5sub_10p1s_qos1_dap"
+  "dap:ex2_40dev_5sub_1p1s_qos1_dap"
+  "dap:ex2_40dev_5sub_5p1s_qos1_dap"
+  "dap:ex2_40dev_5sub_5p5s_qos1_dap"
+  "dap:ex2_40dev_5sub_globalpurpose_qos1_dap"
   "dap:ex2_40dev_10sub_10p1s_qos1_dap"
   "dap:ex2_40dev_10sub_1p1s_qos1_dap"
   "dap:ex2_40dev_10sub_1p5s_qos1_dap"
@@ -195,11 +229,12 @@ CELLS=(
   "dap:ex2_40dev_40sub_5p1s_qos1_dap"
   "dap:ex2_40dev_40sub_5p5s_qos1_dap"
   "dap:ex2_40dev_40sub_globalpurpose_qos1_dap"
-  "dap:ex2_40dev_5sub_10p1s_qos1_dap"
-  "dap:ex2_40dev_5sub_1p1s_qos1_dap"
-  "dap:ex2_40dev_5sub_5p1s_qos1_dap"
-  "dap:ex2_40dev_5sub_5p5s_qos1_dap"
-  "dap:ex2_40dev_5sub_globalpurpose_qos1_dap"
+  # - QoS 2 -
+  "dap:ex2_40dev_5sub_10p1s_qos2_dap"
+  "dap:ex2_40dev_5sub_1p1s_qos2_dap"
+  "dap:ex2_40dev_5sub_5p1s_qos2_dap"
+  "dap:ex2_40dev_5sub_5p5s_qos2_dap"
+  "dap:ex2_40dev_5sub_globalpurpose_qos2_dap"
   "dap:ex2_40dev_10sub_10p1s_qos2_dap"
   "dap:ex2_40dev_10sub_1p1s_qos2_dap"
   "dap:ex2_40dev_10sub_1p5s_qos2_dap"
@@ -212,11 +247,15 @@ CELLS=(
   "dap:ex2_40dev_40sub_5p1s_qos2_dap"
   "dap:ex2_40dev_40sub_5p5s_qos2_dap"
   "dap:ex2_40dev_40sub_globalpurpose_qos2_dap"
-  "dap:ex2_40dev_5sub_10p1s_qos2_dap"
-  "dap:ex2_40dev_5sub_1p1s_qos2_dap"
-  "dap:ex2_40dev_5sub_5p1s_qos2_dap"
-  "dap:ex2_40dev_5sub_5p5s_qos2_dap"
-  "dap:ex2_40dev_5sub_globalpurpose_qos2_dap"
+
+  # == DAP - 80 devs ==
+  # - QoS 0 handled by Ex 1 -
+  # - QoS 1 -
+  "dap:ex2_80dev_5sub_10p1s_qos1_dap"
+  "dap:ex2_80dev_5sub_1p1s_qos1_dap"
+  "dap:ex2_80dev_5sub_5p1s_qos1_dap"
+  "dap:ex2_80dev_5sub_5p5s_qos1_dap"
+  "dap:ex2_80dev_5sub_globalpurpose_qos1_dap"
   "dap:ex2_80dev_10sub_10p1s_qos1_dap"
   "dap:ex2_80dev_10sub_1p1s_qos1_dap"
   "dap:ex2_80dev_10sub_1p5s_qos1_dap"
@@ -229,11 +268,12 @@ CELLS=(
   "dap:ex2_80dev_40sub_5p1s_qos1_dap"
   "dap:ex2_80dev_40sub_5p5s_qos1_dap"
   "dap:ex2_80dev_40sub_globalpurpose_qos1_dap"
-  "dap:ex2_80dev_5sub_10p1s_qos1_dap"
-  "dap:ex2_80dev_5sub_1p1s_qos1_dap"
-  "dap:ex2_80dev_5sub_5p1s_qos1_dap"
-  "dap:ex2_80dev_5sub_5p5s_qos1_dap"
-  "dap:ex2_80dev_5sub_globalpurpose_qos1_dap"
+  # - QoS 2 -
+  "dap:ex2_80dev_5sub_10p1s_qos2_dap"
+  "dap:ex2_80dev_5sub_1p1s_qos2_dap"
+  "dap:ex2_80dev_5sub_5p1s_qos2_dap"
+  "dap:ex2_80dev_5sub_5p5s_qos2_dap"
+  "dap:ex2_80dev_5sub_globalpurpose_qos2_dap"
   "dap:ex2_80dev_10sub_10p1s_qos2_dap"
   "dap:ex2_80dev_10sub_1p1s_qos2_dap"
   "dap:ex2_80dev_10sub_1p5s_qos2_dap"
@@ -246,11 +286,6 @@ CELLS=(
   "dap:ex2_80dev_40sub_5p1s_qos2_dap"
   "dap:ex2_80dev_40sub_5p5s_qos2_dap"
   "dap:ex2_80dev_40sub_globalpurpose_qos2_dap"
-  "dap:ex2_80dev_5sub_10p1s_qos2_dap"
-  "dap:ex2_80dev_5sub_1p1s_qos2_dap"
-  "dap:ex2_80dev_5sub_5p1s_qos2_dap"
-  "dap:ex2_80dev_5sub_5p5s_qos2_dap"
-  "dap:ex2_80dev_5sub_globalpurpose_qos2_dap"
 )
 
 # ---- helpers ----------------------------------------------------------------
@@ -279,14 +314,17 @@ broker_port_for() { case "$1" in dap|dapnv) echo "${DAP_HOST_PORT}";; *) echo "$
 
 start_broker() {  # start_broker <group>
   local group="$1"
+  local cell_dir="$2"
   case "${group}" in
     dap|dapnv)
       local conf=mosquitto-dap.conf
       [ "${group}" = dapnv ] && conf=mosquitto-dap-noverify.conf
+      cp "${CONTAINER_CONFIG_DIR}/${conf}" "${cell_dir}/mosquitto.conf"
       docker run -d --rm --name "${BROKER_NAME}" -p "127.0.0.1:${DAP_HOST_PORT}:1883" \
         -v "${CONTAINER_CONFIG_DIR}/${conf}:/etc/mosquitto/mosquitto.conf:ro" \
         "${DAP_BROKER_IMAGE}" >/dev/null ;;
     stock)
+      cp "${CONTAINER_CONFIG_DIR}/mosquitto-stock.conf" "${cell_dir}/mosquitto.conf"
       docker run -d --rm --name "${BROKER_NAME}" -p "127.0.0.1:${STOCK_HOST_PORT}:1883" \
         -v "${CONTAINER_CONFIG_DIR}/mosquitto-stock.conf:/mosquitto/config/mosquitto.conf:ro" \
         "${STOCK_BROKER_IMAGE}" >/dev/null ;;
@@ -490,7 +528,7 @@ for pass in $(seq 1 "${PASSES}"); do
     mkdir -p "${cell_dir}"
 
     log "pass ${pass} cell ${cell} (${group}): broker up"
-    if ! start_broker "${group}"; then
+    if ! start_broker "${group}" "${cell_dir}"; then
       log "pass ${pass} cell ${cell}: FAIL - broker did not come up; continuing with next cell"
       stop_broker "${cell_dir}" || true
       continue
