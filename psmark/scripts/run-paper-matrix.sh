@@ -51,7 +51,7 @@ DAP_HOST_PORT=18883                                 # matches {port, 18883} in D
 STOCK_HOST_PORT=18884                               # matches {port, 18884} in baseline scenarios
 BROKER_NAME="psmark-matrix-broker"                  # ONLY container this script ever stops
 COOKIE="psmark_cookie"                              # must equal ?PS_BENCH_COOKIE
-GRACE_SECS=300                                      # connect+init+metrics overhead beyond scenario duration
+GRACE_SECS=60                                       # connect+init+metrics overhead beyond scenario duration
 
 DOCKER_STATS_HEADER="TIME,NAME,CPU %,MEM USAGE / LIMIT,MEM %,NET I/O,BLOCK I/O"
 DOCKER_DB_HEADER="TIME,DAP DB BYTES"
@@ -480,8 +480,12 @@ for pass in $(seq 1 "${PASSES}"); do
     if [ -n "${ONLY_CELL}" ] && [ "${cell}" != "${ONLY_CELL}" ]; then continue; fi
     cell_dir="${RESULTS_ROOT}/pass${pass}/${cell}"
     if [ -f "${cell_dir}/DONE" ]; then
-      log "pass ${pass} cell ${cell}: already DONE, skipping (resume)"
-      continue
+      if [ "${FORCE_RERUN:-0}" != "1" ]; then
+        rm -r "${cell_dir}"
+      else
+        log "pass ${pass} cell ${cell}: already DONE, skipping (resume)"
+        continue
+      fi
     fi
     mkdir -p "${cell_dir}"
 
@@ -500,6 +504,8 @@ for pass in $(seq 1 "${PASSES}"); do
 
     if [ "${cell_rc}" -ne 0 ]; then
       log "pass ${pass} cell ${cell}: FAILED (see ${cell_dir}/nodes/*/node.log) - continuing with next cell"
+      touch "${cell_dir}/TIMED_OUT.txt"
+      echo "${cell},${cell_dir}/nodes/*/node.log" >> "${RESULTS_ROOT}/failed_runs.txt" 
       continue   # breadth-first: a bad cell must not starve the rest of the pass
     fi
     # EAR/ERR, DPR and operation coverage/leakage/completion for the cell
