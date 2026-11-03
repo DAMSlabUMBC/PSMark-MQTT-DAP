@@ -36,66 +36,221 @@ RUN_DIR="$(pwd)"
 SCRIPT_DIR=$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PS_BENCH_DIR=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 CONTAINER_CONFIG_DIR=$(cd -- "${PS_BENCH_DIR}/../container_configs" && pwd)
-CONFIG_ROOT="${PS_BENCH_DIR}/configs/builtin-test-suites"
-SCEN_ROOT="${CONFIG_ROOT}/testcases/experiments"
+CONFIG_ROOT="${PS_BENCH_DIR}/configs/DAP"
+SCEN_ROOT="${CONFIG_ROOT}/testcases"
 RESULTS_ROOT="${RUN_DIR}/results/paper_matrix"
 PROGRESS_LOG="${RESULTS_ROOT}/matrix_progress.log"
+CONTAINER_METRICS_PATH="/tmp/dap_broker_metrics.csv"
+CONTAINER_STATS_PATH="/tmp/dap_broker_stats.csv"
 
-DAP_BROKER_IMAGE="mqtt-dap-mosquitto:develop"      # built from mqtt-dap-mosquitto develop, with #4 merged
-STOCK_BROKER_IMAGE="eclipse-mosquitto:2.0"
+DAP_BROKER_IMAGE="mqtt-dap-mosquitto:develop"      # built from mqtt-dap-mosquitto develop (>= 0ba79c81)
+#STOCK_BROKER_IMAGE="eclipse-mosquitto:2"
+#STOCK_BROKER_IMAGE="mosquitto-stock-instrumented:2.1.2"  # mqtt-dap-mosquitto stock-instrumented-2.1.2, same base as DAP image
+STOCK_BROKER_IMAGE="mosquitto-stats:2.1-ubuntu"
 DAP_HOST_PORT=18883                                 # matches {port, 18883} in DAP scenarios
 STOCK_HOST_PORT=18884                               # matches {port, 18884} in baseline scenarios
 BROKER_NAME="psmark-matrix-broker"                  # ONLY container this script ever stops
 COOKIE="psmark_cookie"                              # must equal ?PS_BENCH_COOKIE
 GRACE_SECS=300                                      # connect+init+metrics overhead beyond scenario duration
 
-# ---- the matrix (Appendix B, Tables 5-6; 107 cells) -------------------------
-# group:scenario_name - dap = DAP broker on 18883, stock = stock broker on 18884,
-# dapnv = DAP broker with dap_send_verification false on 18883 (ablation).
+DOCKER_STATS_HEADER="TIME,NAME,CPU %,MEM USAGE / LIMIT,MEM %,NET I/O,BLOCK I/O"
+DOCKER_DB_HEADER="TIME,DAP DB BYTES"
+DOCKER_STATS_CMD="docker container stats --no-stream --format {{.Name}},{{.CPUPerc}},{{.MemUsage}},{{.MemPerc}},{{.NetIO}},{{.BlockIO}} ${BROKER_NAME}"
+DATABASE_CMD="sqlite3"
+DATABASE_PATH="/tmp/mosquitto.sqlite3"
+DATABASE_SIZE_QUERY="select SUM(\"pgsize\") FROM \"dbstat\" WHERE name LIKE 'dap_%';"
+DOCKER_DATABASE_CMD="docker exec -i $BROKER_NAME $DATABASE_CMD $DATABASE_PATH \"$DATABASE_SIZE_QUERY\""
+
+# ---- the matrix (Appendix B, Table 5; 55 cells) ------------------------------
+# group:scenario_name - dap = DAP broker on 18883, stock = stock broker on 18884.
 # The DAP 1x purpose datapoint REUSES dap_static_base (steady-state 40x1); it is
 # deliberately not a separate cell.
+# CELLS=(
+#   # 1. Steady-State Scalability (8)
+#   "dap:dap_static_base"        "stock:baseline_base"
+#   "dap:dap_static_2xdev"       "stock:baseline_2xdev"
+#   "dap:dap_static_2srv"        "stock:baseline_2srv"
+#   "dap:dap_static_2srv_2x"     "stock:baseline_2srv_2xdev"
+#   # 2. Purpose Scalability (7; + 1x reuse of dap_static_base)
+#   "stock:baseline_topic_purposes"
+#   "dap:dap_double_purpose"     "stock:topic_double_purpose"
+#   "dap:dap_triple_purpose"     "stock:topic_triple_purpose"
+#   "dap:${STRESS_CELL}"         "stock:${TOPIC_STRESS_CELL}"
+#   # 3. Operation Impact (16: 4 cases x 4 scalings)
+#   "dap:dap_ops_i_audit_single"   "dap:dap_ops_i_audit_single_2xdev"   "dap:dap_ops_i_audit_single_2srv"   "dap:dap_ops_i_audit_single_2srv_2x"
+#   "dap:dap_ops_ii_delete_single" "dap:dap_ops_ii_delete_single_2xdev" "dap:dap_ops_ii_delete_single_2srv" "dap:dap_ops_ii_delete_single_2srv_2x"
+#   "dap:dap_ops_iii_audit_all"    "dap:dap_ops_iii_audit_all_2xdev"    "dap:dap_ops_iii_audit_all_2srv"    "dap:dap_ops_iii_audit_all_2srv_2x"
+#   "dap:dap_ops_iv_delete_all"    "dap:dap_ops_iv_delete_all_2xdev"    "dap:dap_ops_iv_delete_all_2srv"    "dap:dap_ops_iv_delete_all_2srv_2x"
+#   # 4. Dynamic Purpose Changes (12: 3 intervals x 4 scalings)
+#   "dap:dap_dynamic_1s"  "dap:dap_dynamic_1s_2xdev"  "dap:dap_dynamic_1s_2srv"  "dap:dap_dynamic_1s_2srv_2x"
+#   "dap:dap_dynamic_5s"  "dap:dap_dynamic_5s_2xdev"  "dap:dap_dynamic_5s_2srv"  "dap:dap_dynamic_5s_2srv_2x"
+#   "dap:dap_dynamic_10s" "dap:dap_dynamic_10s_2xdev" "dap:dap_dynamic_10s_2srv" "dap:dap_dynamic_10s_2srv_2x"
+#   # 5. Full Dynamism (12: 3 intervals x 4 scalings)
+#   "dap:dap_full_dynamism_1s"  "dap:dap_full_dynamism_1s_2xdev"  "dap:dap_full_dynamism_1s_2srv"  "dap:dap_full_dynamism_1s_2srv_2x"
+#   "dap:dap_full_dynamism_5s"  "dap:dap_full_dynamism_5s_2xdev"  "dap:dap_full_dynamism_5s_2srv"  "dap:dap_full_dynamism_5s_2srv_2x"
+#   "dap:dap_full_dynamism_10s" "dap:dap_full_dynamism_10s_2xdev" "dap:dap_full_dynamism_10s_2srv" "dap:dap_full_dynamism_10s_2srv_2x"
+# )
+
 CELLS=(
-  # 1. Steady-State Scalability (8)
-  "dap:dap_static_base"        "stock:baseline_base"
-  "dap:dap_static_2xdev"       "stock:baseline_2xdev"
-  "dap:dap_static_2srv"        "stock:baseline_2srv"
-  "dap:dap_static_2srv_2x"     "stock:baseline_2srv_2xdev"
-  # 2. Purpose Scalability (7; + 1x reuse of dap_static_base)
-  "stock:baseline_topic_purposes"
-  "dap:dap_double_purpose"     "stock:topic_double_purpose"
-  "dap:dap_triple_purpose"     "stock:topic_triple_purpose"
-  "dap:${STRESS_CELL}"         "stock:${TOPIC_STRESS_CELL}"
-  # 3. Operation Impact (16: 4 cases x 4 scalings)
-  "dap:dap_ops_i_audit_single"   "dap:dap_ops_i_audit_single_2xdev"   "dap:dap_ops_i_audit_single_2srv"   "dap:dap_ops_i_audit_single_2srv_2x"
-  "dap:dap_ops_ii_delete_single" "dap:dap_ops_ii_delete_single_2xdev" "dap:dap_ops_ii_delete_single_2srv" "dap:dap_ops_ii_delete_single_2srv_2x"
-  "dap:dap_ops_iii_audit_all"    "dap:dap_ops_iii_audit_all_2xdev"    "dap:dap_ops_iii_audit_all_2srv"    "dap:dap_ops_iii_audit_all_2srv_2x"
-  "dap:dap_ops_iv_delete_all"    "dap:dap_ops_iv_delete_all_2xdev"    "dap:dap_ops_iv_delete_all_2srv"    "dap:dap_ops_iv_delete_all_2srv_2x"
-  # 4. Dynamic Purpose Changes (12: 3 intervals x 4 scalings)
-  "dap:dap_dynamic_1s"  "dap:dap_dynamic_1s_2xdev"  "dap:dap_dynamic_1s_2srv"  "dap:dap_dynamic_1s_2srv_2x"
-  "dap:dap_dynamic_5s"  "dap:dap_dynamic_5s_2xdev"  "dap:dap_dynamic_5s_2srv"  "dap:dap_dynamic_5s_2srv_2x"
-  "dap:dap_dynamic_10s" "dap:dap_dynamic_10s_2xdev" "dap:dap_dynamic_10s_2srv" "dap:dap_dynamic_10s_2srv_2x"
-  # 5. Full Dynamism (12: 3 intervals x 4 scalings)
-  "dap:dap_full_dynamism_1s"  "dap:dap_full_dynamism_1s_2xdev"  "dap:dap_full_dynamism_1s_2srv"  "dap:dap_full_dynamism_1s_2srv_2x"
-  "dap:dap_full_dynamism_5s"  "dap:dap_full_dynamism_5s_2xdev"  "dap:dap_full_dynamism_5s_2srv"  "dap:dap_full_dynamism_5s_2srv_2x"
-  "dap:dap_full_dynamism_10s" "dap:dap_full_dynamism_10s_2xdev" "dap:dap_full_dynamism_10s_2srv" "dap:dap_full_dynamism_10s_2srv_2x"
-  # 6. Stock-MQTT twins of 3-5: topic-encoded purposes, broadcast operations (40)
-  "stock:topic_ops_i_audit_single"   "stock:topic_ops_i_audit_single_2xdev"   "stock:topic_ops_i_audit_single_2srv"   "stock:topic_ops_i_audit_single_2srv_2x"
-  "stock:topic_ops_ii_delete_single" "stock:topic_ops_ii_delete_single_2xdev" "stock:topic_ops_ii_delete_single_2srv" "stock:topic_ops_ii_delete_single_2srv_2x"
-  "stock:topic_ops_iii_audit_all"    "stock:topic_ops_iii_audit_all_2xdev"    "stock:topic_ops_iii_audit_all_2srv"    "stock:topic_ops_iii_audit_all_2srv_2x"
-  "stock:topic_ops_iv_delete_all"    "stock:topic_ops_iv_delete_all_2xdev"    "stock:topic_ops_iv_delete_all_2srv"    "stock:topic_ops_iv_delete_all_2srv_2x"
-  "stock:topic_dynamic_1s"  "stock:topic_dynamic_1s_2xdev"  "stock:topic_dynamic_1s_2srv"  "stock:topic_dynamic_1s_2srv_2x"
-  "stock:topic_dynamic_5s"  "stock:topic_dynamic_5s_2xdev"  "stock:topic_dynamic_5s_2srv"  "stock:topic_dynamic_5s_2srv_2x"
-  "stock:topic_dynamic_10s" "stock:topic_dynamic_10s_2xdev" "stock:topic_dynamic_10s_2srv" "stock:topic_dynamic_10s_2srv_2x"
-  "stock:topic_full_dynamism_1s"  "stock:topic_full_dynamism_1s_2xdev"  "stock:topic_full_dynamism_1s_2srv"  "stock:topic_full_dynamism_1s_2srv_2x"
-  "stock:topic_full_dynamism_5s"  "stock:topic_full_dynamism_5s_2xdev"  "stock:topic_full_dynamism_5s_2srv"  "stock:topic_full_dynamism_5s_2srv_2x"
-  "stock:topic_full_dynamism_10s" "stock:topic_full_dynamism_10s_2xdev" "stock:topic_full_dynamism_10s_2srv" "stock:topic_full_dynamism_10s_2srv_2x"
-  # 7. Queuing model: slow subscribers, with and without send verification (12)
-  "dap:dap_queue_dynamic_1s"        "dapnv:dap_queue_dynamic_1s_noverify"
-  "dap:dap_queue_dynamic_5s"        "dapnv:dap_queue_dynamic_5s_noverify"
-  "dap:dap_queue_dynamic_10s"       "dapnv:dap_queue_dynamic_10s_noverify"
-  "dap:dap_queue_full_dynamism_1s"  "dapnv:dap_queue_full_dynamism_1s_noverify"
-  "dap:dap_queue_full_dynamism_5s"  "dapnv:dap_queue_full_dynamism_5s_noverify"
-  "dap:dap_queue_full_dynamism_10s" "dapnv:dap_queue_full_dynamism_10s_noverify"
+  # Ex 1: Versus Baseline
+  "stock:ex1_40dev_10sub_10p1s_baseline"
+  "stock:ex1_40dev_10sub_1p1s_baseline"
+  "stock:ex1_40dev_10sub_1p5s_baseline"
+  "stock:ex1_40dev_10sub_5p1s_baseline"
+  "stock:ex1_40dev_10sub_5p5s_baseline"
+  "stock:ex1_40dev_10sub_globalpurpose_baseline"
+  "stock:ex1_40dev_40sub_10p1s_baseline"
+  "stock:ex1_40dev_40sub_1p1s_baseline"
+  "stock:ex1_40dev_40sub_1p5s_baseline"
+  "stock:ex1_40dev_40sub_5p1s_baseline"
+  "stock:ex1_40dev_40sub_5p5s_baseline"
+  "stock:ex1_40dev_40sub_globalpurpose_baseline"
+  "stock:ex1_40dev_5sub_10p1s_baseline"
+  "stock:ex1_40dev_5sub_1p1s_baseline"
+  "stock:ex1_40dev_5sub_5p1s_baseline"
+  "stock:ex1_40dev_5sub_5p5s_baseline"
+  "stock:ex1_40dev_5sub_globalpurpose_baseline"
+  "stock:ex1_80dev_10sub_10p1s_baseline"
+  "stock:ex1_80dev_10sub_1p1s_baseline"
+  "stock:ex1_80dev_10sub_1p5s_baseline"
+  "stock:ex1_80dev_10sub_5p1s_baseline"
+  "stock:ex1_80dev_10sub_5p5s_baseline"
+  "stock:ex1_80dev_10sub_globalpurpose_baseline"
+  "stock:ex1_80dev_40sub_10p1s_baseline"
+  "stock:ex1_80dev_40sub_1p1s_baseline"
+  "stock:ex1_80dev_40sub_1p5s_baseline"
+  "stock:ex1_80dev_40sub_5p1s_baseline"
+  "stock:ex1_80dev_40sub_5p5s_baseline"
+  "stock:ex1_80dev_40sub_globalpurpose_baseline"
+  "stock:ex1_80dev_5sub_10p1s_baseline"
+  "stock:ex1_80dev_5sub_1p1s_baseline"
+  "stock:ex1_80dev_5sub_5p1s_baseline"
+  "stock:ex1_80dev_5sub_5p5s_baseline"
+  "stock:ex1_80dev_5sub_globalpurpose_baseline"
+
+  "dap:ex1_40dev_10sub_10p1s_dap"
+  "dap:ex1_40dev_10sub_1p1s_dap"
+  "dap:ex1_40dev_10sub_1p5s_dap"
+  "dap:ex1_40dev_10sub_5p1s_dap"
+  "dap:ex1_40dev_10sub_5p5s_dap"
+  "dap:ex1_40dev_10sub_globalpurpose_dap"
+  "dap:ex1_40dev_40sub_10p1s_dap"
+  "dap:ex1_40dev_40sub_1p1s_dap"
+  "dap:ex1_40dev_40sub_1p5s_dap"
+  "dap:ex1_40dev_40sub_5p1s_dap"
+  "dap:ex1_40dev_40sub_5p5s_dap"
+  "dap:ex1_40dev_40sub_globalpurpose_dap"
+  "dap:ex1_40dev_5sub_10p1s_dap"
+  "dap:ex1_40dev_5sub_1p1s_dap"
+  "dap:ex1_40dev_5sub_5p1s_dap"
+  "dap:ex1_40dev_5sub_5p5s_dap"
+  "dap:ex1_40dev_5sub_globalpurpose_dap"
+  "dap:ex1_80dev_10sub_10p1s_dap"
+  "dap:ex1_80dev_10sub_1p1s_dap"
+  "dap:ex1_80dev_10sub_1p5s_dap"
+  "dap:ex1_80dev_10sub_5p1s_dap"
+  "dap:ex1_80dev_10sub_5p5s_dap"
+  "dap:ex1_80dev_10sub_globalpurpose_dap"
+  "dap:ex1_80dev_40sub_10p1s_dap"
+  "dap:ex1_80dev_40sub_1p1s_dap"
+  "dap:ex1_80dev_40sub_1p5s_dap"
+  "dap:ex1_80dev_40sub_5p1s_dap"
+  "dap:ex1_80dev_40sub_5p5s_dap"
+  "dap:ex1_80dev_40sub_globalpurpose_dap"
+  "dap:ex1_80dev_5sub_10p1s_dap"
+  "dap:ex1_80dev_5sub_1p1s_dap"
+  "dap:ex1_80dev_5sub_5p1s_dap"
+  "dap:ex1_80dev_5sub_5p5s_dap"
+  "dap:ex1_80dev_5sub_globalpurpose_dap"
+
+  # Ex 2: Scalability
+  "stock:ex2_40dev_10sub_qos0_stock"
+  "stock:ex2_40dev_40sub_qos0_stock"
+  "stock:ex2_40dev_5sub_qos0_stock"
+  "stock:ex2_40dev_10sub_qos1_stock"
+  "stock:ex2_40dev_40sub_qos1_stock"
+  "stock:ex2_40dev_5sub_qos1_stock"
+  "stock:ex2_40dev_10sub_qos2_stock"
+  "stock:ex2_40dev_40sub_qos2_stock"
+  "stock:ex2_40dev_5sub_qos2_stock"
+  "stock:ex2_80dev_10sub_qos0_stock"
+  "stock:ex2_80dev_40sub_qos0_stock"
+  "stock:ex2_80dev_5sub_qos0_stock"
+  "stock:ex2_80dev_10sub_qos1_stock"
+  "stock:ex2_80dev_40sub_qos1_stock"
+  "stock:ex2_80dev_5sub_qos1_stock"
+  "stock:ex2_80dev_10sub_qos2_stock"
+  "stock:ex2_80dev_40sub_qos2_stock"
+  "stock:ex2_80dev_5sub_qos2_stock"
+
+  "dap:ex2_40dev_10sub_10p1s_qos1_dap"
+  "dap:ex2_40dev_10sub_1p1s_qos1_dap"
+  "dap:ex2_40dev_10sub_1p5s_qos1_dap"
+  "dap:ex2_40dev_10sub_5p1s_qos1_dap"
+  "dap:ex2_40dev_10sub_5p5s_qos1_dap"
+  "dap:ex2_40dev_10sub_globalpurpose_qos1_dap"
+  "dap:ex2_40dev_40sub_10p1s_qos1_dap"
+  "dap:ex2_40dev_40sub_1p1s_qos1_dap"
+  "dap:ex2_40dev_40sub_1p5s_qos1_dap"
+  "dap:ex2_40dev_40sub_5p1s_qos1_dap"
+  "dap:ex2_40dev_40sub_5p5s_qos1_dap"
+  "dap:ex2_40dev_40sub_globalpurpose_qos1_dap"
+  "dap:ex2_40dev_5sub_10p1s_qos1_dap"
+  "dap:ex2_40dev_5sub_1p1s_qos1_dap"
+  "dap:ex2_40dev_5sub_5p1s_qos1_dap"
+  "dap:ex2_40dev_5sub_5p5s_qos1_dap"
+  "dap:ex2_40dev_5sub_globalpurpose_qos1_dap"
+  "dap:ex2_40dev_10sub_10p1s_qos2_dap"
+  "dap:ex2_40dev_10sub_1p1s_qos2_dap"
+  "dap:ex2_40dev_10sub_1p5s_qos2_dap"
+  "dap:ex2_40dev_10sub_5p1s_qos2_dap"
+  "dap:ex2_40dev_10sub_5p5s_qos2_dap"
+  "dap:ex2_40dev_10sub_globalpurpose_qos2_dap"
+  "dap:ex2_40dev_40sub_10p1s_qos2_dap"
+  "dap:ex2_40dev_40sub_1p1s_qos2_dap"
+  "dap:ex2_40dev_40sub_1p5s_qos2_dap"
+  "dap:ex2_40dev_40sub_5p1s_qos2_dap"
+  "dap:ex2_40dev_40sub_5p5s_qos2_dap"
+  "dap:ex2_40dev_40sub_globalpurpose_qos2_dap"
+  "dap:ex2_40dev_5sub_10p1s_qos2_dap"
+  "dap:ex2_40dev_5sub_1p1s_qos2_dap"
+  "dap:ex2_40dev_5sub_5p1s_qos2_dap"
+  "dap:ex2_40dev_5sub_5p5s_qos2_dap"
+  "dap:ex2_40dev_5sub_globalpurpose_qos2_dap"
+  "dap:ex2_80dev_10sub_10p1s_qos1_dap"
+  "dap:ex2_80dev_10sub_1p1s_qos1_dap"
+  "dap:ex2_80dev_10sub_1p5s_qos1_dap"
+  "dap:ex2_80dev_10sub_5p1s_qos1_dap"
+  "dap:ex2_80dev_10sub_5p5s_qos1_dap"
+  "dap:ex2_80dev_10sub_globalpurpose_qos1_dap"
+  "dap:ex2_80dev_40sub_10p1s_qos1_dap"
+  "dap:ex2_80dev_40sub_1p1s_qos1_dap"
+  "dap:ex2_80dev_40sub_1p5s_qos1_dap"
+  "dap:ex2_80dev_40sub_5p1s_qos1_dap"
+  "dap:ex2_80dev_40sub_5p5s_qos1_dap"
+  "dap:ex2_80dev_40sub_globalpurpose_qos1_dap"
+  "dap:ex2_80dev_5sub_10p1s_qos1_dap"
+  "dap:ex2_80dev_5sub_1p1s_qos1_dap"
+  "dap:ex2_80dev_5sub_5p1s_qos1_dap"
+  "dap:ex2_80dev_5sub_5p5s_qos1_dap"
+  "dap:ex2_80dev_5sub_globalpurpose_qos1_dap"
+  "dap:ex2_80dev_10sub_10p1s_qos2_dap"
+  "dap:ex2_80dev_10sub_1p1s_qos2_dap"
+  "dap:ex2_80dev_10sub_1p5s_qos2_dap"
+  "dap:ex2_80dev_10sub_5p1s_qos2_dap"
+  "dap:ex2_80dev_10sub_5p5s_qos2_dap"
+  "dap:ex2_80dev_10sub_globalpurpose_qos2_dap"
+  "dap:ex2_80dev_40sub_10p1s_qos2_dap"
+  "dap:ex2_80dev_40sub_1p1s_qos2_dap"
+  "dap:ex2_80dev_40sub_1p5s_qos2_dap"
+  "dap:ex2_80dev_40sub_5p1s_qos2_dap"
+  "dap:ex2_80dev_40sub_5p5s_qos2_dap"
+  "dap:ex2_80dev_40sub_globalpurpose_qos2_dap"
+  "dap:ex2_80dev_5sub_10p1s_qos2_dap"
+  "dap:ex2_80dev_5sub_1p1s_qos2_dap"
+  "dap:ex2_80dev_5sub_5p1s_qos2_dap"
+  "dap:ex2_80dev_5sub_5p5s_qos2_dap"
+  "dap:ex2_80dev_5sub_globalpurpose_qos2_dap"
 )
 
 # ---- helpers ----------------------------------------------------------------
@@ -136,10 +291,11 @@ start_broker() {  # start_broker <group>
         -v "${CONTAINER_CONFIG_DIR}/mosquitto-stock.conf:/mosquitto/config/mosquitto.conf:ro" \
         "${STOCK_BROKER_IMAGE}" >/dev/null ;;
   esac
-  # wait for the listener (30 s)
+  # Wait (30 s) for the broker's "running" line; the port opens before it's ready.
   local port; port=$(broker_port_for "${group}")
   for _ in $(seq 1 30); do
-    if (echo > "/dev/tcp/127.0.0.1/${port}") 2>/dev/null; then return 0; fi
+    if docker logs "${BROKER_NAME}" 2>&1 | grep -qE "mosquitto version [0-9.]+ running" \
+        && (echo > "/dev/tcp/127.0.0.1/${port}") 2>/dev/null; then return 0; fi
     sleep 1
   done
   return 1
@@ -173,7 +329,7 @@ stop_broker() {  # stop_broker <cell_dir> ; capture logs first, record teardown 
 # the real node names and the lifecycle barriers connect. Each node gets its own
 # workdir (own sys.config, out/, results/, Mnesia.<node> dir - no collisions).
 run_cell_native() {  # run_cell_native <group> <cell> <cell_dir> -> 0 ok / 1 fail
-  local group="$1" cell="$2" cell_dir="$3"
+  local group="$1" cell="$2" cell_dir="$3" pass="$4"
   local scenario_file scenario_dir nodes dur deadline
   scenario_file=$(scenario_file_for "${cell}")
   mapfile -t nodes < <(node_names_for "${scenario_file}")
@@ -233,7 +389,19 @@ EOF
   # Wait for every beam, bounded by duration + grace; on timeout kill OUR pids.
   deadline=$(( $(date +%s) + dur + GRACE_SECS ))
   local fail=0 alive
+
+  echo $DOCKER_STATS_HEADER > "${cell_dir}/broker_container_stats_${cell}_${pass}.csv"
+  echo $DOCKER_DB_HEADER > "${cell_dir}/broker_db_stats_${cell}_${pass}.csv"
   while :; do
+
+    CURR_DATE=`date +%s`
+
+    # Take docker stats
+    echo "$CURR_DATE,`$DOCKER_STATS_CMD`" > temp_record.csv && cat temp_record.csv >> "${cell_dir}/broker_container_stats_${cell}_${pass}.csv"
+
+    # Take DB stats
+    echo "$CURR_DATE,`eval $DOCKER_DATABASE_CMD`" > temp_record.csv && cat temp_record.csv >> "${cell_dir}/broker_db_stats_${cell}_${pass}.csv"
+
     alive=0
     for pid in "${pids[@]}"; do kill -0 "${pid}" 2>/dev/null && alive=$((alive+1)); done
     [ "${alive}" -eq 0 ] && break
@@ -244,8 +412,12 @@ EOF
       for pid in "${pids[@]}"; do kill -9 "${pid}" 2>/dev/null || true; done
       fail=1; break
     fi
-    sleep 5
+    sleep 1
   done
+
+  docker cp "${BROKER_NAME}:${CONTAINER_METRICS_PATH}" "${cell_dir}/broker_internal_metrics_${cell}_${pass}.csv" >/dev/null 2>&1 || log "cell ${cell}: WARNING - no broker metrics file in container"
+  docker cp "${BROKER_NAME}:${CONTAINER_STATS_PATH}" "${cell_dir}/broker_internal_stats_${cell}_${pass}.csv" >/dev/null 2>&1 || log "cell ${cell}: WARNING - no broker stats file in container"
+
   for pid in "${pids[@]}"; do
     if ! wait "${pid}"; then fail=1; fi
   done
@@ -320,7 +492,7 @@ for pass in $(seq 1 "${PASSES}"); do
 
     log "pass ${pass} cell ${cell}: RUN START"
     cell_rc=0
-    run_cell_native "${group}" "${cell}" "${cell_dir}" || cell_rc=$?
+    run_cell_native "${group}" "${cell}" "${cell_dir}" "${pass}" || cell_rc=$?
 
     stop_broker "${cell_dir}" || { log "pass ${pass} cell ${cell}: broker teardown FAILED - aborting run"; exit 1; }
 

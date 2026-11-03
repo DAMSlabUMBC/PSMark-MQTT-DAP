@@ -1,0 +1,74 @@
+[
+    {name, ex2_80dev_10sub_5p5s_qos2_dap},
+    {duration, {60, seconds}},
+    {protocol, mqttv5},
+    {deployment_name, floor_80x1_10sub},
+    {hosts,
+    [
+        {floor1,                     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance,            [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance,     [{hostname, "127.0.0.1"}]},
+        {sub_quality_assurance2,      [{hostname, "127.0.0.1"}]},
+        {sub_maintenance2,            [{hostname, "127.0.0.1"}]},
+        {sub_operations_forecast2,    [{hostname, "127.0.0.1"}]},
+        {sub_regulatory_reporting2,   [{hostname, "127.0.0.1"}]},
+        {sub_vendor_maintenance2,     [{hostname, "127.0.0.1"}]}
+    ]},
+
+    {protocol_config,
+    [
+        {client_interface_module, ps_bench_dap_mqtt_interface},
+        {broker, "127.0.0.1"},
+        {port, 18883},
+        {qos,
+        [
+            {default_qos, 2}
+        ]},
+        {device_purposes,
+        [
+            {machine_temperature_sensor, ["1per5/{1,3,4,5,6}"]},
+            {machine_speed_sensor,       ["1per5/{1,3,4,5,6}"]},
+            {machine_energy_consumption, ["1per5/{1,3,4,5,6}"]},
+            {production_quality_sensor,  ["1per5/{2,3,4,5,6}"]},
+            {vibration_sensor,           ["1per5/{2,3,4,5,6}"]},
+            {robot_farmap,               ["1per5/{1,3,4,5,6}"]},
+            {robot_nearmap,              ["1per5/{1,3,4,5,6}"]},
+            {robot_imu,                  ["1per5/{2,3,4,5,6}"]},
+            {robot_lidar,                ["1per5/{2,3,4,5,6}"]},
+            {robot_odometry,             ["1per5/{2,3,4,5,6}"]},
+            {machine_temperature_sensor2, ["1per5/{1,3,4,5,6}"]},
+            {machine_speed_sensor2,       ["1per5/{1,3,4,5,6}"]},
+            {machine_energy_consumption2, ["1per5/{2,3,4,5,6}"]},
+            {production_quality_sensor2,  ["1per5/{2,3,4,5,6}"]},
+            {vibration_sensor2,           ["1per5/{2,3,4,5,6}"]}
+        ]},
+
+        {node_subscription_purposes,
+        [
+            {sub_quality_assurance,      "1per5/1"},
+            {sub_maintenance,            "1per5/1"},
+            {sub_operations_forecast,    "1per5/1"},
+            {sub_regulatory_reporting,   "1per5/1"},
+            {sub_vendor_maintenance,     "1per5/1"},
+            {sub_quality_assurance2,     "1per5/2"},
+            {sub_maintenance2,           "1per5/2"},
+            {sub_operations_forecast2,   "1per5/2"},
+            {sub_regulatory_reporting2,  "1per5/2"},
+            {sub_vendor_maintenance2,    "1per5/2"}
+        ]}
+    ]},
+
+    {metric_config,
+    [
+        {output_dir, "results"},
+        {metric_plugins,
+        [
+            {ps_bench_throughput_calc_plugin, erlang},
+            {ps_bench_latency_calc_plugin, erlang},
+            {ps_bench_dropped_message_calc_plugin, erlang}
+        ]}
+    ]}
+].
