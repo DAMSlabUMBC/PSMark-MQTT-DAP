@@ -6,10 +6,11 @@ present, the broker's per-message metrics (broker_metrics.csv in the cell direct
 
   Residual error: EAR, the share of deliveries the policy in force did not permit,
   and ERR, the share of messages it permitted throughout their delivery window that
-  never arrived. The policy in force is what clients last sent: each subscriber's
-  SP and each publisher topic's MP, recorded when they were sent, so delays in
-  applying an update count as residual error. A DELETE or RESTRICT a publisher
-  issued after a message also forbids it.
+  never arrived. A message keeps the MP it was published under and is checked against
+  the SPs in force while it was on its way. A DELETE or RESTRICT the publisher issued
+  after it also applies, to subscribers whose SP shares a purpose with its DAP-OpPFs:
+  a DELETE removes it and a RESTRICT requires the new MP to permit the SP. Outcomes
+  that depend on a policy change still reaching the broker are counted separately.
 
   Delivery Protection Rate (DPR): re-verifications at the broker's send-path gate
   over the deliveries it queued.
@@ -143,45 +144,72 @@ def load(cell):
     return pubs, recvs, events
 
 
-def residual_error(pubs, recvs, events):
+def load_outages(cell):
+    """Each subscriber's offline periods: client -> [(disconnect time, reconnect time)]."""
+    raw = f"{cell}/nodes/*/results/*/raw_events"
+    down, up = defaultdict(list), defaultdict(list)
+    for r in read_rows(f"{raw}/*_disconnect_events.csv"):
+        down[name(r["ClientName"])].append(int(r["DisconnectTimeNs"]))
+    for r in read_rows(f"{raw}/*_connect_events.csv"):
+        up[name(r["ClientName"])].append(int(r["ConnectTimeNs"]))
+    outages = defaultdict(list)
+    for client, times in down.items():
+        for t in sorted(times):
+            back = [u for u in up[client] if u > t]
+            if back:
+                outages[client].append((t, min(back)))
+    return outages
+
+
+def residual_error(pubs, recvs, events, outages=None):
+    outages = outages or {}
     sp = defaultdict(Timeline)
     mp = defaultdict(Timeline)
-    ops = defaultdict(list)  # requester client -> [(time, type, topic filters, revoked purposes)]
+    ops = defaultdict(list)  # requester client -> [(time, type, topic filters, purposes, new MP)]
     for e in events:
         if e["Event"] == "sp_subscribe":
             sp[e["Client"]].add(e["TimeNs"], purposes(e["Detail"]))
         elif e["Event"] == "mp_register":
             mp[(e["Client"], e["Topic"])].add(e["TimeNs"], purposes(e["Detail"]))
         elif e["Event"] == "op_issue" and e["OpType"] in ("DELETE", "RESTRICT"):
-            ops[e["Client"]].append((e["TimeNs"], e["OpType"], split_collection(e["Topic"]), purposes(e["Detail"])))
+            pfs = purposes(e["Detail"])
+            # PSMark sends the first of the requester's sorted purposes as DAP-OpParam.
+            new_mp = frozenset(sorted(pfs)[:1])
+            ops[e["Client"]].append((e["TimeNs"], e["OpType"], split_collection(e["Topic"]), pfs, new_mp))
     if not sp:
         return None
-    op_times = {c: [o[0] for o in sorted(lst)] for c, lst in ops.items()}
-    ops = {c: sorted(lst) for c, lst in ops.items()}
+    ops = {c: sorted(lst, key=lambda o: o[0]) for c, lst in ops.items()}
+    op_times = {c: [o[0] for o in lst] for c, lst in ops.items()}
 
-    def forbidden_by_op(client, topic, t0, t1, sub_sp):
+    def op_rejects(client, topic, t0, t1, sub_sp):
+        """An operation in (t0, t1] on this topic stops delivery under this SP."""
         lst = ops.get(client, ())
         if not lst:
             return False
         times = op_times[client]
-        for to, kind, tfs, pfs in lst[bisect.bisect_right(times, t0):bisect.bisect_right(times, t1)]:
-            if any(f == "*" or topic_matches(f, topic) for f in tfs):
-                if kind == "DELETE" or not pfs or "*" in pfs or (sub_sp & pfs):
+        for _, kind, tfs, pfs, new_mp in lst[bisect.bisect_right(times, t0):bisect.bisect_right(times, t1)]:
+            if not any(f == "*" or topic_matches(f, topic) for f in tfs):
+                continue
+            if "*" in pfs or not pfs or (sub_sp & pfs):
+                if kind == "DELETE" or not permits(new_mp, sub_sp):
                     return True
         return False
 
-    def allowed(client, topic, tp, sub, t):
-        s = sp[sub].at(t)
-        return (permits(mp[(client, topic)].at(tp), s) and permits(mp[(client, topic)].at(t), s)
-                and not forbidden_by_op(client, topic, tp, t, s or frozenset()))
+    def sps_during(sub, t0, t1):
+        """The SPs in force from t0 to t1: the broker checks whichever applied at send."""
+        tl = sp[sub]
+        first = max(bisect.bisect_right(tl.times, t0) - 1, 0)
+        return tl.values[first:bisect.bisect_right(tl.times, t1)]
+
+    latencies = sorted(tr - tp for _, sub, key, tp, tr in recvs if key in pubs and sub in sp)
+    window = latencies[int(len(latencies) * 0.99)] if latencies else 0
 
     # A message's payload carries its publish time; PSMark records the publish event
     # only once the publish call returns, so that time is for unreceived messages.
     sent_at = {key: tp for _, _, key, tp, _ in recvs}
-    delivered = erroneous_acc = 0
+    delivered = erroneous_acc = racing_acc = 0
     got = defaultdict(set)
     last_recv = {}
-    latencies = []
     for node, sub, key, tp, tr in recvs:
         if key not in pubs or sub not in sp:
             continue
@@ -189,12 +217,14 @@ def residual_error(pubs, recvs, events):
         delivered += 1
         got[key].add(sub)
         last_recv[sub] = max(last_recv.get(sub, tr), tr)
-        latencies.append(tr - tp)
-        if not allowed(client, key[1], tp, sub, tr):
+        # A message keeps the MP it was published under.
+        msg_mp = mp[(client, key[1])].at(tp)
+        sps = [s for s in sps_during(sub, tp, tr) if permits(msg_mp, s)]
+        if not any(not op_rejects(client, key[1], tp, tr - window, s) for s in sps):
             erroneous_acc += 1
+        elif not any(not op_rejects(client, key[1], tp, tr, s) for s in sps):
+            racing_acc += 1  # the operation was still reaching the broker
 
-    latencies.sort()
-    window = latencies[int(len(latencies) * 0.99)] if latencies else 0
     expected = erroneous_rej = racing = 0
     first_sp = {s: tl.times[0] for s, tl in sp.items()}
     for key, (client, recorded) in pubs.items():
@@ -204,11 +234,17 @@ def residual_error(pubs, recvs, events):
         for sub in sp:
             if not (first_sp[sub] <= tp <= last_recv.get(sub, 0)):
                 continue  # not subscribed yet, or the run had ended for it
-            if not allowed(client, key[1], tp, sub, tp):
+            s = sp[sub].at(tp)
+            if not permits(mp[(client, key[1])].at(tp), s):
                 continue
-            if (not allowed(client, key[1], tp, sub, tp + window)
-                    or sp[sub].changes_between(tp, tp + window) or mp[(client, key[1])].changes_between(tp, tp + window)):
-                racing += 1  # the policy changed while it was in flight: either outcome is valid
+            # A queued message waits for the subscriber to return.
+            due = tp
+            for start, end in outages.get(sub, ()):
+                if start - window <= tp < end:
+                    due = end
+            due += window
+            if sp[sub].changes_between(tp, due) or op_rejects(client, key[1], tp, due, s):
+                racing += 1  # the policy changed before it could arrive: either outcome is valid
                 continue
             expected += 1
             if sub not in got[key]:
@@ -216,6 +252,7 @@ def residual_error(pubs, recvs, events):
     return {
         "delivered": delivered,
         "erroneous_acceptances": erroneous_acc,
+        "racing_acceptances": racing_acc,
         "EAR_pct": 100.0 * erroneous_acc / delivered if delivered else 0.0,
         "expected": expected,
         "erroneous_rejections": erroneous_rej,
@@ -397,7 +434,7 @@ def main():
     args = ap.parse_args()
     pubs, recvs, events = load(args.cell)
     result = {"cell": os.path.basename(os.path.normpath(args.cell)),
-              "residual_error": residual_error(pubs, recvs, events),
+              "residual_error": residual_error(pubs, recvs, events, load_outages(args.cell)),
               "delivery_protection": delivery_protection(args.cell),
               "operations": operations(pubs, recvs, events)}
     if args.json:
