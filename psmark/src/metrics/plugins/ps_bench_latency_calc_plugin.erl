@@ -2,6 +2,10 @@
 
 -export([init/1, calc/0]).
 
+-ifdef(TEST).
+-export([calculate_pairwise_latency_for_one_node/2]).
+-endif.
+
 init(OutDir) ->
       persistent_term:put({?MODULE, out_dir}, OutDir).
 
@@ -67,7 +71,7 @@ calculate_pairwise_latency_for_one_node(ThisNode, TargetNode) ->
                                                       PacketLatency2 = TRecvNs2 - TPubNs2,
                                                       PacketLatency1 < PacketLatency2
                                                 end, AllRecvEvents),
-                  MedianIndex = TotalMessages div 2, % Integer divison
+                  MedianIndex = max(1, TotalMessages div 2), % Integer divison
                   {_, _, _, _, _, MedianTPubNs, MedianTRecvNs, _} = lists:nth(MedianIndex, SortedLatencies),
                   MedianValue = MedianTRecvNs - MedianTPubNs,
                   MedianValueMs = MedianValue / 1000000.0,
@@ -76,9 +80,9 @@ calculate_pairwise_latency_for_one_node(ThisNode, TargetNode) ->
                   % First calculate indexes as (TotalMessages * p_val)
                   % e.g. for 500 messages, the 90th percentile index would be 450
                   % We round down for a more conservative measurement
-                  P90Index = erlang:trunc(TotalMessages * 0.90),
-                  P95Index = erlang:trunc(TotalMessages * 0.95),
-                  P99Index = erlang:trunc(TotalMessages * 0.99),
+                  P90Index = max(1, erlang:trunc(TotalMessages * 0.90)),
+                  P95Index = max(1, erlang:trunc(TotalMessages * 0.95)),
+                  P99Index = max(1, erlang:trunc(TotalMessages * 0.99)),
 
                   {_, _, _, _, _, P90TPubNs, P90TRecvNs, _} = lists:nth(P90Index, SortedLatencies),
                   P90ValueNs = P90TRecvNs - P90TPubNs,

@@ -51,7 +51,7 @@ DAP_HOST_PORT=18883                                 # matches {port, 18883} in D
 STOCK_HOST_PORT=18884                               # matches {port, 18884} in baseline scenarios
 BROKER_NAME="psmark-matrix-broker"                  # ONLY container this script ever stops
 COOKIE="psmark_cookie"                              # must equal ?PS_BENCH_COOKIE
-GRACE_SECS=60                                       # connect+init+metrics overhead beyond scenario duration
+GRACE_SECS=${GRACE_SECS:-300}                                       # connect+init+metrics overhead beyond scenario duration
 
 DOCKER_STATS_HEADER="TIME,NAME,CPU %,MEM USAGE / LIMIT,MEM %,NET I/O,BLOCK I/O"
 DOCKER_DB_HEADER="TIME,DAP DB BYTES"

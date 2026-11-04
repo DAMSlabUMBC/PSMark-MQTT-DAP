@@ -2,6 +2,10 @@
 
 -export([init/1, calc/0]).
 
+-ifdef(TEST).
+-export([calculate_pairwise_throughput_for_one_node/2]).
+-endif.
+
 init(OutDir) ->
       persistent_term:put({?MODULE, out_dir}, OutDir).
 
@@ -52,7 +56,7 @@ calculate_pairwise_throughput_for_one_node(ThisNode, TargetNode) ->
                   
 
                   DurationS = (OverallMaxTimNs - OverallMinTimeNs) / 1000000000.0,
-                  Throughput = TotalMessages / DurationS,
+                  Throughput = TotalMessages / max(DurationS, 1.0), % Under a second counts as one
 
                   % Now partition recieved messages based on seconds
                   PartitionedList = partition_throughput_list(AllRecvEvents, OverallMinTimeNs, OverallMaxTimNs, []),
@@ -64,13 +68,13 @@ calculate_pairwise_throughput_for_one_node(ThisNode, TargetNode) ->
                                                             SquaredDifference = math:pow(Difference, 2),
                                                             CurrSum + SquaredDifference
                                                       end, 0, PartitionedList),
-                  Variance = SumOfSquaredMeans / DurationS,
+                  Variance = SumOfSquaredMeans / max(DurationS, 1.0),
 
                   % Now compute the median value
                   SortedTimeframes = lists:sort(fun(InnerList1, InnerList2) ->
                                                       length(InnerList1) < length(InnerList2)
                                                 end, PartitionedList),
-                  MedianIndex = length(PartitionedList) div 2, % Integer divison
+                  MedianIndex = max(1, length(PartitionedList) div 2), % Integer divison
                   MedianValue = length(lists:nth(MedianIndex, SortedTimeframes)),
 
                   % Now compute P90/95/99 values with the sorted throughputs
@@ -80,9 +84,9 @@ calculate_pairwise_throughput_for_one_node(ThisNode, TargetNode) ->
                   % We round down for a more conservative measurement
                   ReversedTimeframes = lists:reverse(SortedTimeframes),
                   TimeframeCount = length(ReversedTimeframes),
-                  P90Index = erlang:trunc(TimeframeCount * 0.90),
-                  P95Index = erlang:trunc(TimeframeCount * 0.95),
-                  P99Index = erlang:trunc(TimeframeCount * 0.99),
+                  P90Index = max(1, erlang:trunc(TimeframeCount * 0.90)),
+                  P95Index = max(1, erlang:trunc(TimeframeCount * 0.95)),
+                  P99Index = max(1, erlang:trunc(TimeframeCount * 0.99)),
 
                   P90Value = length(lists:nth(P90Index, ReversedTimeframes)),
                   P95Value = length(lists:nth(P95Index, ReversedTimeframes)),
