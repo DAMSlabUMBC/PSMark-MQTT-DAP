@@ -89,10 +89,11 @@ handle_call({publish, Properties, Topic, _Seq, Payload, PubOpts},
     case Connected of
         true ->
             AllPurposeList = pub_purposes(Topic, State),
+            CombinationPurposeList = cnr_all(AllPurposeList),
             case maps:get(Topic, Published, undefined) of
-                AllPurposeList -> ok;
+                CombinationPurposeList -> ok;
                 _ -> ps_bench_store:record_dap_event(erlang:system_time(nanosecond), ClientIdBin, mp_register, Topic,
-                                                     #{detail => join(AllPurposeList, <<"|">>, <<>>)})
+                                                     #{detail => join(CombinationPurposeList, <<"|">>, <<>>)})
             end,
 
             %% Topic-based purpose amplification: publish the same logical message
@@ -106,8 +107,8 @@ handle_call({publish, Properties, Topic, _Seq, Payload, PubOpts},
                   Payload1 = <<TimeNs:64/unsigned, Payload/binary>>,
                   emqtt:publish(ClientPid, EncodedTopic, Properties, Payload1, PubOpts)
               end,
-              AllPurposeList),
-            {reply, {ok, published}, State#{published := Published#{Topic => AllPurposeList}}};
+              CombinationPurposeList),
+            {reply, {ok, published}, State#{published := Published#{Topic => CombinationPurposeList}}};
         false ->
             %% Not connected; swallow to keep orchestration alive
             {reply, {ok, not_connected}, State}
@@ -374,3 +375,19 @@ purposes_for_topic(Topic, PurposeMap) ->
         _ ->
             ["p1"]
     end.
+
+
+cnr_all(SrcLst) ->
+    F = fun(N) -> cnr(N, SrcLst) end,
+    lists:flatmap(F, lists:seq(0, length(SrcLst))).
+
+cnr(N, SrcLst) when N >= 0 ->
+    Cnr = fun Cnr(0, _, Acc) -> [Acc];
+              Cnr(_, [], _) -> [];
+              Cnr(M, [H | T], Acc) ->
+                  case T of
+                      [] -> Cnr(M - 1, [], [H | Acc]);
+                      [_ | _] -> Cnr(M - 1, T, [H | Acc]) ++ Cnr(M, T, Acc)
+                  end
+          end,
+    Cnr(N, SrcLst, []).
