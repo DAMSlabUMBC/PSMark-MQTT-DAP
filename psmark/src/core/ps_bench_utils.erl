@@ -14,6 +14,7 @@
 -export([decompose_purpose_filter/1]).
 -export([rotation_index/2, rotation_purpose/3]).
 -export([rotation_toggle_added/2, rotation_toggle_filter/4]).
+-export([rotated_tokens/4, pick_op_issues/3, scaled_publish_interval/2, outage_selected/3]).
 
 % TODO, Fix RNG seeding
 initialize_rng_seed() ->
@@ -229,6 +230,33 @@ rotation_toggle_filter(NowMs, WindowMs, BaseList, TogglePurpose) ->
                  false -> BaseList
              end,
     join_purpose_tokens(Tokens).
+
+%% Round-robin rotation: each token moves along List by the window number, so
+%% clients on different nodes agree from the clock alone.
+rotated_tokens(NowMs, WindowMs, Tokens, List) ->
+    N = length(List),
+    Shift = rotation_index(NowMs, WindowMs),
+    Indexed = lists:zip(List, lists:seq(0, N - 1)),
+    [case lists:keyfind(T, 1, Indexed) of
+         {T, I} -> lists:nth(((I + Shift) rem N) + 1, List);
+         false -> T
+     end || T <- Tokens].
+
+%% Rate distinct random clients, with OpTypes dealt out evenly among them.
+pick_op_issues(Clients, Rate, OpTypes) ->
+    Shuffled = [C || {_, C} <- lists:sort([{rand:uniform(), C} || C <- Clients])],
+    Picked = lists:sublist(Shuffled, Rate),
+    N = length(OpTypes),
+    [{C, lists:nth((I rem N) + 1, OpTypes)}
+     || {C, I} <- lists:zip(Picked, lists:seq(0, length(Picked) - 1))].
+
+scaled_publish_interval(IntervalMs, Factor) ->
+    max(1, round(IntervalMs / Factor)).
+
+%% The first Fraction of the sorted subscriber nodes.
+outage_selected(Node, SubNodes, Fraction) ->
+    Sorted = lists:sort(SubNodes),
+    lists:member(Node, lists:sublist(Sorted, round(length(Sorted) * Fraction))).
 
 join_purpose_tokens([]) -> <<>>;
 join_purpose_tokens([First | Rest]) ->

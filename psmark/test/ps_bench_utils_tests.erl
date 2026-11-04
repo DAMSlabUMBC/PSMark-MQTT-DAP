@@ -105,3 +105,40 @@ toggle_offset_breaks_lockstep_test() ->
     W = 1000,
     ?assertNotEqual(ps_bench_utils:rotation_toggle_added(0, W),
                     ps_bench_utils:rotation_toggle_added(1000, W)).
+
+%% Every client moves to the next purposes in the list each window.
+rotated_tokens_test() ->
+    L = [<<"a">>, <<"b">>, <<"c">>],
+    ?assertEqual([<<"a">>], ps_bench_utils:rotated_tokens(0, 10, [<<"a">>], L)),
+    ?assertEqual([<<"b">>], ps_bench_utils:rotated_tokens(10, 10, [<<"a">>], L)),
+    ?assertEqual([<<"a">>], ps_bench_utils:rotated_tokens(10, 10, [<<"c">>], L)),
+    ?assertEqual([<<"b">>, <<"c">>], ps_bench_utils:rotated_tokens(10, 10, [<<"a">>, <<"b">>], L)),
+    %% A purpose outside the list stays put.
+    ?assertEqual([<<"z">>], ps_bench_utils:rotated_tokens(10, 10, [<<"z">>], L)).
+
+%% N distinct issuers per tick, with the op types split evenly.
+pick_op_issues_test() ->
+    Clients = lists:seq(1, 40),
+    Types = [audit, history, update],
+    Issues = ps_bench_utils:pick_op_issues(Clients, 6, Types),
+    ?assertEqual(6, length(Issues)),
+    ?assertEqual(6, length(lists:usort([C || {C, _} <- Issues]))),
+    [?assertEqual(2, length([x || {_, T0} <- Issues, T0 =:= T])) || T <- Types],
+    %% Never more issuers than clients.
+    ?assertEqual(2, length(ps_bench_utils:pick_op_issues([1, 2], 6, Types))),
+    ?assertEqual([], ps_bench_utils:pick_op_issues([], 6, Types)).
+
+scaled_publish_interval_test() ->
+    ?assertEqual(100, ps_bench_utils:scaled_publish_interval(100, 1.0)),
+    ?assertEqual(67, ps_bench_utils:scaled_publish_interval(100, 1.5)),
+    ?assertEqual(7, ps_bench_utils:scaled_publish_interval(10, 1.5)),
+    ?assertEqual(1, ps_bench_utils:scaled_publish_interval(1, 1.5)).
+
+%% The same half of the subscribers is chosen on every node, whatever the order.
+outage_selected_test() ->
+    Subs = [d, b, a, c],
+    ?assert(ps_bench_utils:outage_selected(a, Subs, 0.5)),
+    ?assert(ps_bench_utils:outage_selected(b, Subs, 0.5)),
+    ?assertNot(ps_bench_utils:outage_selected(c, Subs, 0.5)),
+    ?assertNot(ps_bench_utils:outage_selected(d, Subs, 0.5)),
+    ?assertNot(ps_bench_utils:outage_selected(floor1, Subs, 0.5)).

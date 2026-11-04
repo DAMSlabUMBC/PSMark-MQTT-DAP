@@ -48,6 +48,8 @@ init({ScenarioName, RegName, OwnerPid}) ->
     {ok, PurposeMap} = ps_bench_config_manager:fetch_mqtt_device_purposes(),
     {ok, RotationWindowMs} = ps_bench_config_manager:fetch_mqtt_purpose_rotation_window_ms(),
     {ok, TogglePurpose} = ps_bench_config_manager:fetch_mqtt_rotation_toggle_purpose(),
+    {ok, RotationList} = ps_bench_config_manager:fetch_mqtt_rotation_list(),
+    {ok, RotationMode} = ps_bench_config_manager:fetch_mqtt_rotation_mode(),
     {ok, NodeRole} = ps_bench_config_manager:fetch_role_for_this_node(),
     SubPurpose = resolve_node_sp(),
     {ok, #{scenario_name => ScenarioName, client_name => ClientIdBin, reg_name => RegName,
@@ -59,6 +61,8 @@ init({ScenarioName, RegName, OwnerPid}) ->
            node_role => NodeRole,
            rotation_window_ms => RotationWindowMs,
            rotation_toggle => TogglePurpose,
+           rotation_list => RotationList,
+           rotation_mode => RotationMode,
            sub_topics => [],          %% topics this client is subscribed to (for re-subscribe)
            applied_sp => undefined}}. %% last DAP-SP actually sent (avoids redundant re-subscribe)
 
@@ -309,10 +313,19 @@ current_rotation_filter(W, Toggle, BaseTokens) when W > 0, is_binary(Toggle) ->
 current_rotation_filter(_W, _Toggle, _BaseTokens) ->
     undefined.
 
+rotated_now(W, Tokens, List) ->
+    ps_bench_utils:rotated_tokens(erlang:system_time(millisecond), W, Tokens, List).
+
 %% Effective subscription purpose: subscriber-role nodes toggle over their real
 %% per-node SP when rotation is on; everyone else (and rotation-off runs) keeps
 %% the static per-node SP. Publisher nodes' legacy subscription clients are
 %% excluded so a toggled window can never widen their match-any SP.
+effective_sp(#{node_role := subscriber, rotation_window_ms := W, rotation_list := [_ | _] = List,
+               rotation_mode := Mode, sub_purpose := SubPurpose}) when W > 0 ->
+    case Mode of
+        pub -> SubPurpose;
+        _ -> join_binaries(rotated_now(W, filter_tokens(SubPurpose), List), <<"|">>, ?DAP_ALLOW_ALL_FILTER)
+    end;
 effective_sp(#{node_role := subscriber, rotation_window_ms := W,
                rotation_toggle := Toggle, sub_purpose := SubPurpose}) ->
     case current_rotation_filter(W, Toggle, filter_tokens(SubPurpose)) of
@@ -324,6 +337,14 @@ effective_sp(#{sub_purpose := SubPurpose}) ->
 
 %% Effective publish (MP) purpose: the device's real purpose tokens, toggled
 %% when rotation is on, statically '|'-joined otherwise.
+effective_pub_purpose(Topic, #{rotation_window_ms := W, rotation_list := [_ | _] = List,
+                               rotation_mode := Mode, purpose_map := PurposeMap}) when W > 0 ->
+    BaseTokens = mp_tokens_for_topic(Topic, PurposeMap),
+    Tokens = case Mode of
+                 sub -> BaseTokens;
+                 _ -> rotated_now(W, BaseTokens, List)
+             end,
+    join_binaries(Tokens, <<"|">>, ?DAP_ALLOW_ALL_FILTER);
 effective_pub_purpose(Topic, #{rotation_window_ms := W, rotation_toggle := Toggle,
                                purpose_map := PurposeMap}) ->
     BaseTokens = mp_tokens_for_topic(Topic, PurposeMap),

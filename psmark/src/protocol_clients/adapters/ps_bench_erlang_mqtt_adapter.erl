@@ -137,6 +137,12 @@ handle_cast(rotate_purpose, State = #{server_reference := ServerReference}) ->
     gen_server:cast(ServerReference, rotate_purpose),
     {noreply, State};
 
+% Burst schedule: restart the publication timer at the new rate.
+handle_cast({set_publish_factor, Factor}, State = #{device_type := DeviceType, server_reference := ServerReference, pub_task := PubTaskRef}) ->
+    timer:cancel(PubTaskRef),
+    {ok, NewRef} = start_publication_loop(DeviceType, ServerReference, Factor),
+    {noreply, State#{pub_task := NewRef}};
+
 % Operation-issue tick: forward to the interface, which submits an operation
 % scoped to this publisher's own topic/purpose.
 handle_cast({issue_operation, OpType}, State = #{server_reference := ServerReference}) ->
@@ -248,6 +254,9 @@ do_subscribe(_Topics, ServerReference, Tid) ->
     ets:insert(Tid, {ServerReference, NewTopicList}).
 
 start_publication_loop(DeviceType, ServerReference) ->
+    start_publication_loop(DeviceType, ServerReference, 1.0).
+
+start_publication_loop(DeviceType, ServerReference, Factor) ->
     % Lookup needed parameters
     {ok, PubFrequencyMs} = ps_bench_config_manager:fetch_device_publication_frequency(DeviceType),
     {ok, PayloadSizeMean, PayloadSizeVariance} = ps_bench_config_manager:fetch_device_payload_info(DeviceType),
@@ -262,7 +271,7 @@ start_publication_loop(DeviceType, ServerReference) ->
     % Create task
     {ok, TRef} =
     timer:apply_interval(
-      PubFrequencyMs,
+      ps_bench_utils:scaled_publish_interval(PubFrequencyMs, Factor),
       ?MODULE, publication_loop,
       [ServerReference, Topic, QoS, PayloadSizeMean, PayloadSizeVariance]),
     {ok, TRef}.

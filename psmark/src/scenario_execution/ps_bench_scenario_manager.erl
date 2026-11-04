@@ -7,7 +7,7 @@
 
 %% public
 -export([initialize_scenario/0, run_scenario/0, stop_scenario/0, clean_up_scenario/0]).
--export([rotate_all_clients/0, issue_ops_from_publishers/0]).
+-export([rotate_all_clients/0, issue_ops_from_publishers/0, set_publish_factor/1, subscriber_outage_call/1]).
 
 % Currently we only support one scenario a run
 initialize_scenario() ->
@@ -36,6 +36,8 @@ run_scenario() ->
     start_client_loops(),
     maybe_start_rotation_timer(),
     maybe_start_op_timer(),
+    maybe_schedule_burst(),
+    maybe_schedule_outage(),
     _Ref = timer:apply_after(DurationMs, ?MODULE, stop_scenario, []).
 
 stop_scenario() ->
@@ -147,16 +149,63 @@ issue_ops_from_publishers() ->
         true ->
             {ok, Mode} = ps_bench_config_manager:fetch_mqtt_op_issuer_mode(),
             {ok, OpTypes} = ps_bench_config_manager:fetch_mqtt_op_group_types(),
+            {ok, Rate} = ps_bench_config_manager:fetch_mqtt_op_rate(),
             ClientList = persistent_term:get({?MODULE, device_clients}, []),
-            Issuers = select_op_issuers(Mode, ClientList),
-            lists:foreach(fun({_N, Pid}) ->
-                              lists:foreach(fun(OpType) ->
-                                                gen_server:cast(Pid, {issue_operation, OpType})
-                                            end, OpTypes)
-                          end, Issuers);
+            case Rate of
+                0 ->
+                    Issuers = select_op_issuers(Mode, ClientList),
+                    lists:foreach(fun({_N, Pid}) ->
+                                      lists:foreach(fun(OpType) ->
+                                                        gen_server:cast(Pid, {issue_operation, OpType})
+                                                    end, OpTypes)
+                                  end, Issuers);
+                _ ->
+                    lists:foreach(fun({{_N, Pid}, OpType}) ->
+                                      gen_server:cast(Pid, {issue_operation, OpType})
+                                  end, ps_bench_utils:pick_op_issues(ClientList, Rate, OpTypes))
+            end;
         false ->
             ok
     end.
+
+%%--------------------------------------------------------------------
+%% Burst and subscriber outage schedules
+%%--------------------------------------------------------------------
+maybe_schedule_burst() ->
+    case ps_bench_config_manager:fetch_mqtt_publish_burst() of
+        {ok, {StartMs, EndMs, Factor}} ->
+            case has_publishers() of
+                true ->
+                    {ok, _} = timer:apply_after(StartMs, ?MODULE, set_publish_factor, [Factor]),
+                    {ok, _} = timer:apply_after(EndMs, ?MODULE, set_publish_factor, [1.0]),
+                    ok;
+                false -> ok
+            end;
+        _ -> ok
+    end.
+
+set_publish_factor(Factor) ->
+    lists:foreach(fun({_N, Pid}) -> gen_server:cast(Pid, {set_publish_factor, Factor}) end,
+                  persistent_term:get({?MODULE, device_clients}, [])).
+
+maybe_schedule_outage() ->
+    case ps_bench_config_manager:fetch_mqtt_subscriber_outage() of
+        {ok, {StartMs, EndMs, Fraction}} ->
+            {ok, NodeName} = ps_bench_config_manager:fetch_node_name(),
+            {ok, NodeSPs} = ps_bench_config_manager:fetch_mqtt_node_subscription_purposes(),
+            case ps_bench_utils:outage_selected(NodeName, proplists:get_keys(NodeSPs), Fraction) of
+                true ->
+                    {ok, _} = timer:apply_after(StartMs, ?MODULE, subscriber_outage_call, [disconnect]),
+                    {ok, _} = timer:apply_after(EndMs, ?MODULE, subscriber_outage_call, [reconnect]),
+                    ok;
+                false -> ok
+            end;
+        _ -> ok
+    end.
+
+subscriber_outage_call(Call) ->
+    {_Name, Client} = persistent_term:get({?MODULE, subscription_client}),
+    gen_server:call(Client, Call).
 
 %% all_publishers -> everyone; single_random -> one publisher, pinned for the run
 %% so the same issuer is reused each interval (deterministic from the RNG seed). It is

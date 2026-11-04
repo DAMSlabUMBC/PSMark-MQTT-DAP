@@ -77,6 +77,16 @@
 % purposes pattern). Publishers toggle it on their registered MP, subscriber
 % nodes on their DAP-SP, in lockstep. Unset (default) = no toggle.
 -define(MQTT_ROTATION_TOGGLE_PROP, rotation_toggle_purpose).
+% Round-robin rotation: every purpose moves along this list each window, on
+% publishers, subscribers or both. Replaces the toggle when set.
+-define(MQTT_ROTATION_LIST_PROP, purpose_rotation_list).
+-define(MQTT_ROTATION_MODE_PROP, purpose_rotation_mode).
+% Op-issue tick: this many random devices each issue one op from the op group.
+-define(MQTT_OP_RATE_PROP, op_rate_per_s).
+% {StartMs, EndMs, Factor}: publish Factor times faster during the window.
+-define(MQTT_BURST_PROP, publish_burst).
+% {StartMs, EndMs, Fraction}: that share of subscribers is offline during the window.
+-define(MQTT_SUB_OUTAGE_PROP, subscriber_outage).
 % Per-node subscriber purpose (DAP-SP): proplist NodeName -> SP string. A value
 % may be a single purpose or a '|'-joined multi-filter (paper SS2.2 consumer
 % grouping). Nodes not listed fall back to "*" (match-any), preserving the
