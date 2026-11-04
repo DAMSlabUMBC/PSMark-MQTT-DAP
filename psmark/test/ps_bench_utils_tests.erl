@@ -116,6 +116,15 @@ rotated_tokens_test() ->
     %% A purpose outside the list stays put.
     ?assertEqual([<<"z">>], ps_bench_utils:rotated_tokens(10, 10, [<<"z">>], L)).
 
+%% Subscribers walk the list backwards, so publisher and subscriber pairs actually shift.
+rotated_tokens_reversed_test() ->
+    L = [<<"a">>, <<"b">>, <<"c">>],
+    R = lists:reverse(L),
+    ?assertEqual([<<"a">>], ps_bench_utils:rotated_tokens(0, 10, [<<"a">>], R)),
+    ?assertEqual([<<"c">>], ps_bench_utils:rotated_tokens(10, 10, [<<"a">>], R)),
+    ?assertEqual([<<"b">>], ps_bench_utils:rotated_tokens(20, 10, [<<"a">>], R)),
+    ?assertEqual([<<"a">>], ps_bench_utils:rotated_tokens(30, 10, [<<"a">>], R)).
+
 %% N distinct issuers per tick, with the op types split evenly.
 pick_op_issues_test() ->
     Clients = lists:seq(1, 40),

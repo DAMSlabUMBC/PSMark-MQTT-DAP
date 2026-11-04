@@ -324,7 +324,8 @@ effective_sp(#{node_role := subscriber, rotation_window_ms := W, rotation_list :
                rotation_mode := Mode, sub_purpose := SubPurpose}) when W > 0 ->
     case Mode of
         pub -> SubPurpose;
-        _ -> join_binaries(rotated_now(W, filter_tokens(SubPurpose), List), <<"|">>, ?DAP_ALLOW_ALL_FILTER)
+        %% Backwards, so pairs shift when publishers rotate too.
+        _ -> join_binaries(rotated_now(W, filter_tokens(SubPurpose), lists:reverse(List)), <<"|">>, ?DAP_ALLOW_ALL_FILTER)
     end;
 effective_sp(#{node_role := subscriber, rotation_window_ms := W,
                rotation_toggle := Toggle, sub_purpose := SubPurpose}) ->
