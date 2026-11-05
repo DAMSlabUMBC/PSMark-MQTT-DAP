@@ -1,4 +1,4 @@
-Stock Mosquitto 2.1.2 (99fa50f3) with the timing stats the runs use. From a checkout: patch -p1 < stock-broker.patch, then docker build.
+Stock Mosquitto 2.1.2 (99fa50f3) with the timing stats the runs use. From a checkout: patch -p1 < stock-broker.patch, then chmod +x docker-entrypoint.sh and docker build.
 diff -ruN -x build -x '*.o' -x '.git*' stock-up/config.mk stockq/config.mk
 --- stock-up/config.mk	2026-02-09 04:29:02.000000000 -0500
 +++ stockq/config.mk	2026-11-02 22:50:49.000000000 -0500
